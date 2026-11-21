@@ -1,0 +1,33 @@
+---
+/** The four things Mantix wants to be known for (proposal §2). */
+const things = [
+  {
+    title: 'Just TypeScript and npm',
+    text: 'A test is a .ts file with a default export. Import your app’s own schemas and clients, or anything on npm. No special runtime.',
+  },
+  {
+    title: 'The statistical truth, by default',
+    text: 'Open model first. Latency is measured from when a request should have started, and percentiles come from merged histograms, never averages.',
+  },
+  {
+    title: 'Steer a run while it happens',
+    text: 'Start and stop runs from the dashboard today. A live rate dial, spikes and pauses, all kept in the run’s journal, are next on the roadmap.',
+  },
+  {
+    title: 'A dashboard worth reading',
+    text: 'A latency heatmap with p50 and p99 drawn on top, target against achieved throughput, errors by class, and an endpoint table that expands.',
+  },
+]
+---
+
+<div class="mx-four not-content">
+  {
+    things.map((thing, index) => (
+      <div>
+        <span class="n">{String(index + 1).padStart(2, '0')}</span>
+        <h3>{thing.title}</h3>
+        <p>{thing.text}</p>
+      </div>
+    ))
+  }
+</div>
