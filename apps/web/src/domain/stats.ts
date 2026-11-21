@@ -58,23 +58,35 @@ export const lastSeconds = (
 export type Figures = Readonly<{
   /** Requests finished per second, on average. */
   achieved: number
-  /** What the plan asked for, on average (req/s, or VUs for the closed model). */
+  /** What the plan asked for, on average: iterations/s, or VUs. */
   target: number
+  /** Iterations started per second, on average (compare with `target`). */
+  iterations: number
+  /** Virtual users alive, on average (compare with `target` for VUs). */
+  vus: number
   requests: number
   /** Failed share of requests, 0..1. */
   errorRate: number
   p99: number
 }>
 
+const average = (
+  seconds: ReadonlyArray<Second>,
+  pick: (second: Second) => number,
+): number =>
+  Array.isReadonlyArrayNonEmpty(seconds)
+    ? seconds.reduce((sum, second) => sum + pick(second), 0) / seconds.length
+    : 0
+
 export const figures = (all: ReadonlyArray<Second>, count: number): Figures => {
   const { total } = summarizeLast(all, count)
   const seconds = lastSeconds(all, count)
-  const target = Array.isReadonlyArrayNonEmpty(seconds)
-    ? seconds.reduce((sum, second) => sum + second.target, 0) / seconds.length
-    : 0
+  const target = average(seconds, second => second.target)
   return {
     achieved: total.rps,
     target,
+    iterations: average(seconds, second => second.started),
+    vus: average(seconds, second => second.vus),
     requests: total.requests,
     errorRate: total.errorRate,
     p99: total.latency.p99,

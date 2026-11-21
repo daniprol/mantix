@@ -72,14 +72,16 @@ export const figuresView = (
   const isRate = run.plan.every(scenario => scenario.plan.model === 'rate')
   const hasEnough = figures.requests >= MIN_SAMPLES_FOR_P99
   const errorPercent = figures.errorRate * 100
+  // The plan counts iterations (one pass through the test, often several
+  // requests), so the note compares iterations with iterations.
   const throughputNote = isRate
-    ? `of ${Format.text(Format.rate(figures.target))} planned`
-    : `${Format.grouped(figures.target)} virtual users`
+    ? `${Format.significant(figures.iterations)} iterations/s of ${Format.significant(figures.target)} planned`
+    : `${Format.grouped(figures.vus)} users of ${Format.grouped(figures.target)} planned`
   return h.div(
     [h.Class('grid grid-cols-3 gap-6 sm:gap-12 sm:flex')],
     [
       figure(
-        'Throughput',
+        'Requests',
         quantity(Format.rate(figures.achieved), h),
         throughputNote,
         breaches(run, 'rps', figures.achieved),

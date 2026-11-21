@@ -19,6 +19,10 @@ export type SecondColumn = Readonly<{
   p50: number | null
   p99: number | null
   requests: number
+  /** Iterations started this second (the open model's load). */
+  started: number
+  /** Virtual users alive at the end of the second (the closed model's load). */
+  vus: number
   errors: number
   lagged: boolean
   /** Latency distribution as [ms, count] pairs, for the heatmap. */
@@ -33,6 +37,9 @@ export type TimelineSeries = Readonly<{
   columns: ReadonlyArray<Option.Option<SecondColumn>>
   p50: Array<number | null>
   p99: Array<number | null>
+  /** The load lane compares like with like: planned against achieved
+   *  iterations/s for the open model, or virtual users for the closed one. */
+  isRate: boolean
   target: Array<number | null>
   achieved: Array<number | null>
   maybeLiveEdge: Option.Option<number>
@@ -57,6 +64,8 @@ const toColumn = (second: Second): SecondColumn => {
     p50: merged.count === 0 ? null : Histogram.percentile(merged, 0.5) / 1000,
     p99: merged.count === 0 ? null : Histogram.percentile(merged, 0.99) / 1000,
     requests,
+    started: second.started,
+    vus: second.vus,
     errors,
     lagged: second.loopLagMs > LAG_LIMIT_MS,
     cells,
@@ -94,7 +103,7 @@ export const buildSeries = ({ run, seconds }: TimelineData): TimelineSeries => {
   const p50 = value(column => column.p50)
   const p99 = value(column => column.p99)
   const isRate = run.plan.every(scenario => scenario.plan.model === 'rate')
-  const target = x.map(i => (isRate ? plannedTotalAt(run.plan, i) : null))
+  const target = x.map(i => plannedTotalAt(run.plan, i))
   const maybeLimit = latencyLimit(run)
 
   const observed = Array.getSomes(columns)
@@ -120,8 +129,9 @@ export const buildSeries = ({ run, seconds }: TimelineData): TimelineSeries => {
     columns,
     p50,
     p99,
+    isRate,
     target,
-    achieved: value(column => column.requests),
+    achieved: value(column => (isRate ? column.started : column.vus)),
     maybeLiveEdge:
       run.status === 'running' ? Option.some(seconds.length) : Option.none(),
     maybeLimit,
@@ -135,6 +145,7 @@ export const EMPTY_SERIES: TimelineSeries = {
   columns: [],
   p50: [],
   p99: [],
+  isRate: true,
   target: [],
   achieved: [],
   maybeLiveEdge: Option.none(),

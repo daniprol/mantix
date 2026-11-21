@@ -171,6 +171,16 @@ const drawEndLabels = (
       label.y = previous.y + gap
     }
   })
+  // Then keep them inside the plot, so none sits on the x axis labels,
+  // pushing neighbours up instead.
+  const bottom = u.bbox.top + u.bbox.height - px(u, 5)
+  ;[...sorted].reverse().forEach((label, index, fromBottom) => {
+    const below = fromBottom[index - 1]
+    const isNear =
+      below !== undefined && Math.abs(label.x - below.x) < px(u, 90)
+    const limit = isNear ? Math.min(bottom, below.y - gap) : bottom
+    label.y = Math.min(label.y, limit)
+  })
   ctx.save()
   ctx.font = `500 ${px(u, 11)}px ${SANS}`
   ctx.textAlign = 'left'
@@ -254,6 +264,10 @@ const drawLatencyOverlays = (u: uPlot, drawing: Drawing) => {
   drawLaneTitle(u, 'Latency', palette)
 }
 
+/** "33.3/s" for the open model, "50" (users) for the closed one. */
+const loadText = (series: TimelineSeries, value: number): string =>
+  series.isRate ? Format.text(Format.rate(value)) : Format.grouped(value)
+
 const drawLaneOverlays = (u: uPlot, drawing: Drawing) => {
   const { series, palette } = drawing
   const { ctx } = u
@@ -281,7 +295,7 @@ const drawLaneOverlays = (u: uPlot, drawing: Drawing) => {
   ctx.restore()
   const labels = [
     Option.map(lastPoint(u, series.achieved), point => ({
-      text: `${Format.text(Format.rate(point.value))} achieved`,
+      text: `${loadText(series, point.value)} achieved`,
       x: point.x,
       y: point.y,
       colour: palette.ink,
@@ -294,7 +308,11 @@ const drawLaneOverlays = (u: uPlot, drawing: Drawing) => {
     })),
   ]
   drawEndLabels(u, palette, Array.getSomes(labels))
-  drawLaneTitle(u, 'Throughput', palette)
+  drawLaneTitle(
+    u,
+    series.isRate ? 'Load · iterations/s' : 'Load · virtual users',
+    palette,
+  )
 }
 
 // AXES
@@ -426,7 +444,7 @@ const createCharts = (
         yAxis(palette, {
           space: 32,
           values: (_u, values) =>
-            values.map(value => Format.text(Format.rate(value))),
+            values.map(value => loadText(current().series, value)),
         }),
       ],
       series: [
@@ -475,7 +493,7 @@ const readoutText = (series: TimelineSeries, index: number | null): string =>
             column.p99 === null
               ? ''
               : `p99 ${Format.text(Format.latency(column.p99))}`,
-            Format.text(Format.rate(column.requests)),
+            `${Format.rate(column.requests).value} req/s`,
             column.errors === 0
               ? 'no errors'
               : `${Format.grouped(column.errors)} ${column.errors === 1 ? 'error' : 'errors'}`,
