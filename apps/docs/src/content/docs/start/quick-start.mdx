@@ -116,7 +116,7 @@ The median is a few milliseconds, but p99 is over a second. That is the
 planted 1.5 second stall: during it, requests kept arriving on schedule and
 waited, and Mantix counted how long each one waited. Many tools would have
 reported a healthy p99 here. [Reading results
-honestly](/concepts/results/) explains the difference.
+honestly](/mantix/concepts/results/) explains the difference.
 
 ### Exit codes
 
@@ -140,7 +140,7 @@ pnpm mantix run examples/quick.ts --rate 100 --duration 1m
 pnpm mantix run examples/quick.ts --vus 20
 ```
 
-See the [CLI reference](/reference/cli/) for every flag.
+See the [CLI reference](/mantix/reference/cli/) for every flag.
 
 ## 4. Watch it live
 
@@ -152,12 +152,12 @@ pnpm mantix ui examples/quick.ts
 
 Open [http://localhost:4100](http://localhost:4100), press **Start**, and
 watch the run build up second by second. Press **Stop** whenever you like.
-[Reading the dashboard](/start/dashboard/) walks through each part.
+[Reading the dashboard](/mantix/start/dashboard/) walks through each part.
 
 ## 5. Write your own
 
 Test files live in the `examples/` folder, which is set up so that
 `import … from 'mantix'` resolves. Copy `quick.ts` to a new file and change
-the journey. The next page to read is [Writing tests](/guides/writing-tests/);
+the journey. The next page to read is [Writing tests](/mantix/guides/writing-tests/);
 `examples/checkout.ts` is a fuller example that adds to a cart and checks
 out.

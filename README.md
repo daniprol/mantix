@@ -34,10 +34,11 @@ pnpm install   # installs dependencies and the git hooks
 pnpm check     # format, lint, typecheck and test everything
 ```
 
-The documentation site lives in `apps/docs` (Astro Starlight):
+The documentation site lives in `apps/docs` (Astro Starlight) and is
+published to https://daniprol.github.io/mantix/ on every push to main:
 
 ```sh
-pnpm --filter @mantix/docs dev     # http://localhost:4321
+pnpm --filter @mantix/docs dev     # http://localhost:4321/mantix/
 pnpm --filter @mantix/docs build   # static site in apps/docs/dist
 ```
 

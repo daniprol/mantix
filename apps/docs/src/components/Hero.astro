@@ -5,6 +5,8 @@
  * the tagline and two actions. No image, no gradient.
  */
 // Starlight's page title id, which the skip link and anchors point to.
+import { withBase } from '../lib/base.ts'
+
 const { data } = Astro.locals.starlightRoute.entry
 const { title = data.title, tagline, actions = [] } = data.hero ?? {}
 ---
@@ -21,7 +23,7 @@ const { title = data.title, tagline, actions = [] } = data.hero ?? {}
       <div class="actions">
         {actions.map(({ link, text, variant }) => (
           <a
-            href={link}
+            href={withBase(link)}
             class:list={['action', variant === 'primary' && 'primary']}
           >
             {text}

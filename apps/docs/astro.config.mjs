@@ -11,7 +11,15 @@ import starlight from '@astrojs/starlight'
 
 import { mantixDark, mantixLight } from './src/code-themes.mjs'
 
+// Published on GitHub Pages at https://daniprol.github.io/mantix/, so every
+// page lives under /mantix. Links inside Markdown content are written with
+// that prefix (e.g. [Thresholds](/mantix/guides/thresholds/)); components
+// use withBase() from src/lib/base.ts.
+const base = '/mantix'
+
 export default defineConfig({
+  site: 'https://daniprol.github.io',
+  base,
   integrations: [
     starlight({
       title: 'Mantix',

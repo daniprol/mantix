@@ -1,4 +1,6 @@
 ---
+import { withBase } from '../../lib/base.ts'
+
 /** Three plain links to start reading, separated by hairlines. */
 const links = [
   {
@@ -22,7 +24,7 @@ const links = [
 <nav class="mx-next not-content" aria-label="Start reading">
   {
     links.map(link => (
-      <a href={link.href}>
+      <a href={withBase(link.href)}>
         <span class="t">{link.title} →</span>
         <span class="d">{link.text}</span>
       </a>

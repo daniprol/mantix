@@ -127,7 +127,7 @@ down" and "the server sends the wrong shape" never blur together.
 Like any failed request, the promise rejects with `RequestFailed` (here with
 `kind: 'SchemaMismatch'`) and the iteration ends. Catch it if the journey
 should continue; see [When a request
-fails](/guides/writing-tests/#when-a-request-fails).
+fails](/mantix/guides/writing-tests/#when-a-request-fails).
 
 The demo target sends `price` as a string in about 1% of cart responses.
 Run `examples/checkout.ts` against it and you will see a steady trickle of
