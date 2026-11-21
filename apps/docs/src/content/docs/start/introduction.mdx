@@ -18,8 +18,8 @@ command line, and adds a few things neither does by default.
 <Aside type="caution" title="Pre-release">
   Mantix is a work in progress and is not published to npm yet. To try it today,
   you run it from a clone of the repository. The [quick
-  start](/start/quick-start/) shows how. Names and output may still change
-  before the first release.
+  start](/mantix/start/quick-start/) shows how. Names and output may still
+  change before the first release.
 </Aside>
 
 ## What it looks like
@@ -62,7 +62,7 @@ API client, the same fixtures.
 response before sending the next request, which quietly hides how slow the
 server was. Mantix keeps sending on schedule and measures each request
 from when it _should_ have started. It never averages percentiles. The
-[Reading results honestly](/concepts/results/) page explains why that
+[Reading results honestly](/mantix/concepts/results/) page explains why that
 matters.
 
 **You can watch a run happen.** `mantix ui` opens a local dashboard with a
@@ -72,7 +72,7 @@ one column per second.
 **Effect is optional.** Mantix is built on [Effect](https://effect.website),
 a TypeScript library for reliable concurrent programs. You do not need to
 know it. Tests are plain `async` functions. If you already use Effect,
-there is an [Effect flavour](/guides/effect/) of the same API that adds
+there is an [Effect flavour](/mantix/guides/effect/) of the same API that adds
 typed errors, retries and clean cancellation.
 
 ## Where it can't win
@@ -84,5 +84,5 @@ staging, and for reading the results carefully.
 
 ## Next
 
-Head to the [quick start](/start/quick-start/) to run your first test
+Head to the [quick start](/mantix/start/quick-start/) to run your first test
 against the demo server that ships in the repository.

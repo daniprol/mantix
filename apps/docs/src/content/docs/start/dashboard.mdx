@@ -49,7 +49,7 @@ target's 30 second hiccup).
 The latencies here are corrected for coordinated omission: measured from
 when each iteration should have started. The uncorrected value is shown
 next to it, so you can see how much the correction matters. The
-[results page](/concepts/results/) explains both.
+[results page](/mantix/concepts/results/) explains both.
 
 ## Throughput: target against achieved
 
@@ -62,7 +62,7 @@ When they overlap, Mantix is keeping up. When achieved falls below target,
 every allowed virtual user was busy waiting for the server, and new
 arrivals were **dropped** rather than queued. That gap is the clearest sign
 that the server is saturated. See [maxVus and dropped
-iterations](/concepts/load-models/#maxvus-and-dropped-iterations).
+iterations](/mantix/concepts/load-models/#maxvus-and-dropped-iterations).
 
 ## Errors
 

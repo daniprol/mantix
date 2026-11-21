@@ -29,7 +29,7 @@ down with it and sends _less_ traffic, exactly when you want to know what
 happens under pressure. The slow period also produces fewer measurements,
 so it barely moves the percentiles. This is called **coordinated
 omission**, and it is the reason most load tests look better than
-production. [Reading results honestly](/concepts/results/#coordinated-omission)
+production. [Reading results honestly](/mantix/concepts/results/#coordinated-omission)
 goes into detail.
 
 <Aside type="tip" title="Use rate by default">
@@ -141,4 +141,4 @@ load: vus.ramping({
 `--rate 100` uses a constant rate of 100/s, `--vus 20` uses 20 constant
 users, and `--duration 2m` sets the length. With only `--duration`, the
 file's own model is stretched or squeezed to fit, so a ramp keeps its
-shape. See the [CLI reference](/reference/cli/).
+shape. See the [CLI reference](/mantix/reference/cli/).

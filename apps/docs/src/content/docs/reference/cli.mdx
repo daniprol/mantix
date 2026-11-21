@@ -58,7 +58,7 @@ GET /products/:sku    1,500   50.0    3.9 ms   8.7 ms   12.1 ms  31.0 ms  0.0%
 ```
 
 Latencies are corrected for coordinated omission (see [Reading results
-honestly](/concepts/results/)).
+honestly](/mantix/concepts/results/)).
 
 ### Exit codes
 
@@ -112,7 +112,7 @@ Open [http://localhost:4100](http://localhost:4100), press **Start** to begin
 the run and **Stop** to end it. The dashboard shows a latency heatmap with
 p50 and p99, target against achieved throughput, errors by kind, and an
 endpoints table you can click to expand. See [Reading the
-dashboard](/start/dashboard/).
+dashboard](/mantix/start/dashboard/).
 
 The server only listens on your machine. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd>.
 
@@ -128,4 +128,4 @@ It serves `GET /products/:sku`, `GET /cart/:id`, `POST /cart/items` and
 `POST /checkout` on [http://localhost:4200](http://localhost:4200) (or
 `$PORT`), with planted bugs: a 1.5 second stall every 30 seconds, about 2%
 `503`s on checkout, and about 1% schema drift on the cart. See the [quick
-start](/start/quick-start/#2-start-the-demo-target).
+start](/mantix/start/quick-start/#2-start-the-demo-target).

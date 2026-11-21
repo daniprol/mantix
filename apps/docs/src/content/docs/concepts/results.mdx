@@ -57,7 +57,7 @@ Mantix avoids this in two ways:
 
 1. **It keeps the schedule.** With the open model (`rate.*`), iterations
    start when the plan says they should, whether or not the server has
-   answered earlier ones. See [Load models](/concepts/load-models/).
+   answered earlier ones. See [Load models](/mantix/concepts/load-models/).
 2. **It measures from the intended start.** Each latency is measured from
    when the request _should_ have started, not from when it was actually
    sent. If the generator itself fell behind, that delay is counted too: a

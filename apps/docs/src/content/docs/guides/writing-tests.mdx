@@ -32,18 +32,18 @@ export default scenario({
 
 The options:
 
-| Option       | Required | What it does                                                                |
-| ------------ | -------- | --------------------------------------------------------------------------- |
-| `name`       | yes      | How the scenario appears in results.                                        |
-| `load`       | yes      | How much traffic to generate. See [Load models](/concepts/load-models/).    |
-| `iteration`  | yes      | One user's journey: an `async` function, called many times.                 |
-| `baseUrl`    |          | Put in front of every path that doesn't start with `http://` or `https://`. |
-| `thresholds` |          | Pass/fail rules. See [Thresholds](/guides/thresholds/).                     |
-| `headers`    |          | Headers sent with every request.                                            |
-| `timeout`    |          | Default request timeout. Default `'10s'`.                                   |
-| `setup`      |          | Runs once before the load starts. See [Setup](/guides/setup-and-mixes/).    |
-| `teardown`   |          | Runs once after the load stops.                                             |
-| `startAfter` |          | Wait this long before this scenario begins.                                 |
+| Option       | Required | What it does                                                                    |
+| ------------ | -------- | ------------------------------------------------------------------------------- |
+| `name`       | yes      | How the scenario appears in results.                                            |
+| `load`       | yes      | How much traffic to generate. See [Load models](/mantix/concepts/load-models/). |
+| `iteration`  | yes      | One user's journey: an `async` function, called many times.                     |
+| `baseUrl`    |          | Put in front of every path that doesn't start with `http://` or `https://`.     |
+| `thresholds` |          | Pass/fail rules. See [Thresholds](/mantix/guides/thresholds/).                  |
+| `headers`    |          | Headers sent with every request.                                                |
+| `timeout`    |          | Default request timeout. Default `'10s'`.                                       |
+| `setup`      |          | Runs once before the load starts. See [Setup](/mantix/guides/setup-and-mixes/). |
+| `teardown`   |          | Runs once after the load stops.                                                 |
+| `startAfter` |          | Wait this long before this scenario begins.                                     |
 
 Durations are either a number of seconds (`30`) or text: `'500ms'`, `'30s'`,
 `'2m'`, `'1h'`.
@@ -168,7 +168,7 @@ await http.post('/checkout', {
 ### Validating the body
 
 Pass a schema as `expect` and Mantix checks every response body against it.
-This gets its own page: [Validating responses](/guides/validation/).
+This gets its own page: [Validating responses](/mantix/guides/validation/).
 
 ## When a request fails
 

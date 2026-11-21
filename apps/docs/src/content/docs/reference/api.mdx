@@ -69,7 +69,7 @@ scenario.effect<Data, E>(options): Scenario
 
 The same options as `scenario()`, except that `iteration`, `setup` and
 `teardown` return an `Effect` instead of a `Promise`, and `http` is an
-`EffectHttp`. See [Effect scenarios](/guides/effect/).
+`EffectHttp`. See [Effect scenarios](/mantix/guides/effect/).
 
 ## Iteration context
 
@@ -146,7 +146,7 @@ weighted([[weight, run], …]): (context) => Promise<void>
 
 Returns an iteration that picks one `run` at random per call, in proportion
 to its `weight`. Throws if the list is empty or the weights add up to 0. See
-[A mix of journeys](/guides/setup-and-mixes/#a-mix-of-journeys-with-weighted).
+[A mix of journeys](/mantix/guides/setup-and-mixes/#a-mix-of-journeys-with-weighted).
 
 ## Load models
 
@@ -159,7 +159,7 @@ to its `weight`. Throws if the list is empty or the weights add up to 0. See
 
 A `Stage` is `{ duration: DurationInput, target: number }`. Each stage moves
 in a straight line from the previous target to its own. See [Load
-models](/concepts/load-models/).
+models](/mantix/concepts/load-models/).
 
 ## Thresholds
 
@@ -173,7 +173,7 @@ A `ThresholdInput` is a string such as `'p99 < 250ms'`, or an object:
 
 Metrics: `p50`, `p90`, `p95`, `p99`, `max` (units `ms` or `s`), `errors`
 (in `%`), `rps`. Operators: `<`, `<=`, `>`, `>=`. See
-[Thresholds](/guides/thresholds/).
+[Thresholds](/mantix/guides/thresholds/).
 
 ## Durations
 
