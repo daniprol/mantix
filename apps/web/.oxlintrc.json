@@ -1,0 +1,20 @@
+{
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "extends": ["./node_modules/@foldkit/oxlint-plugin/recommended.json"],
+  "rules": {
+    "typescript/consistent-type-assertions": [
+      "error",
+      { "assertionStyle": "never" }
+    ]
+  },
+  "ignorePatterns": ["dist/", "vite.config.ts", "vitest.config.ts"],
+  "overrides": [
+    {
+      // The mock server is a dev tool, not a Foldkit program.
+      "files": ["mock/**"],
+      "rules": {
+        "typescript/consistent-type-assertions": "off"
+      }
+    }
+  ]
+}
