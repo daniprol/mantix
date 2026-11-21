@@ -12,7 +12,7 @@ import { Command } from 'effect/cli'
  */
 import { NodeRuntime, NodeServices } from '@effect/platform-node'
 
-import { mantix } from './RunCommand.ts'
+import { mantix } from './Cli.ts'
 
 mantix.pipe(
   Command.run({ version: '0.0.0' }),
