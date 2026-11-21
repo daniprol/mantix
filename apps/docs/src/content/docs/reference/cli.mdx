@@ -1,0 +1,131 @@
+---
+title: CLI
+description: Every mantix command and flag, its output and its exit codes.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+<Aside type="caution" title="Pre-release">
+  Until Mantix is on npm, run the CLI from a clone of the repository as `pnpm
+  mantix …` (it runs `packages/server/src/bin.ts` with Node). After the first
+  release it will be `npx mantix …`. Commands and flags may still change before
+  then.
+</Aside>
+
+## mantix run
+
+Runs a test file headless, prints progress and a summary, checks thresholds,
+and exits with a code your CI can act on.
+
+```sh
+mantix run <file> [--rate N] [--vus N] [--duration 30s] [--json out.json] [--quiet]
+```
+
+| Flag              | What it does                                                                                                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<file>`          | The test file. Its default export is one scenario or an array of them.                                                                                            |
+| `--rate N`        | Replace every scenario's load with a constant rate of `N` iterations per second (open model). A `maxVus` from the file is kept.                                   |
+| `--vus N`         | Replace every scenario's load with `N` constant virtual users (closed model).                                                                                     |
+| `--duration 30s`  | How long to run. With `--rate` or `--vus`, the length of that constant load. On its own, the file's stages are stretched or squeezed to fit, keeping their shape. |
+| `--json out.json` | Also write the full summary as JSON to this file.                                                                                                                 |
+| `--quiet`         | Don't print the per-second lines; print only the final summary.                                                                                                   |
+
+Durations are written like `500ms`, `30s`, `2m`, `1h`, or a plain number of
+seconds. Without `--duration`, `--rate` and `--vus` run for the file's
+planned duration.
+
+### Output
+
+While the run goes, one line per second: elapsed time, iterations started
+against the target, the p99 latency for that second, and the share of failed
+requests.
+
+```txt frame="terminal"
+  12s  1,000/s (target 1,000)  p99 23.4 ms  err 0.4%
+```
+
+At the end, a table with one row per endpoint and a total, then each
+threshold with its measured value, then a one-line verdict:
+
+```txt frame="terminal"
+endpoint              req     req/s   p50      p95      p99      max      errors
+GET /products/:sku    1,500   50.0    3.9 ms   8.7 ms   12.1 ms  31.0 ms  0.0%
+
+✓ p99 < 250ms     12.1 ms
+✓ errors < 1%     0.0%
+
+✓ PASSED: all thresholds met
+```
+
+Latencies are corrected for coordinated omission (see [Reading results
+honestly](/concepts/results/)).
+
+### Exit codes
+
+| Code | Meaning                                                                                         |
+| ---- | ----------------------------------------------------------------------------------------------- |
+| `0`  | The run finished and every threshold passed (or there were none).                               |
+| `99` | At least one threshold failed. The same code as k6.                                             |
+| `1`  | An error: the file could not be loaded, an option or threshold was invalid, or the run crashed. |
+
+In a CI step, that is all you need:
+
+```yaml
+- run: pnpm mantix run examples/checkout.ts --json results.json
+```
+
+### JSON summary
+
+`--json` writes the run's summary as one JSON object:
+
+| Field        | Contents                                                                                                                                                                          |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`    | Format version, currently `1`.                                                                                                                                                    |
+| `run`        | The run: `id`, `testName`, `status` (`finished`, `stopped`, `aborted` or `crashed`), start and end times, the plan, and `thresholds` with each one's `actual` value and `passed`. |
+| `seconds`    | How many seconds of data the summary covers.                                                                                                                                      |
+| `iterations` | Counts: `started`, `completed`, `failed`, `dropped`.                                                                                                                              |
+| `total`      | Statistics for all endpoints together.                                                                                                                                            |
+| `endpoints`  | The same statistics, one entry per endpoint.                                                                                                                                      |
+
+Each statistics block (`total` and every entry of `endpoints`) has
+`endpoint`, `requests`, `errors`, `errorRate` (0 to 1), `rps`,
+`errorsByKind`, the corrected `latency` and the `uncorrected` latency next
+to it. Latencies are `p50`, `p90`, `p95`, `p99` and `max`, in
+milliseconds. The
+format is pre-release and may change; the `version` field will tell you when
+it does.
+
+## mantix ui
+
+Starts the local dashboard for a test file.
+
+```sh
+mantix ui <file> [--port 4100]
+```
+
+| Flag          | What it does                                |
+| ------------- | ------------------------------------------- |
+| `<file>`      | The test file, as for `mantix run`.         |
+| `--port 4100` | The port for the dashboard. Default `4100`. |
+
+Open [http://localhost:4100](http://localhost:4100), press **Start** to begin
+the run and **Stop** to end it. The dashboard shows a latency heatmap with
+p50 and p99, target against achieved throughput, errors by kind, and an
+endpoints table you can click to expand. See [Reading the
+dashboard](/start/dashboard/).
+
+The server only listens on your machine. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+
+## The demo target
+
+Not part of the CLI, but you will use it with every example in these docs:
+
+```sh
+pnpm --filter @mantix/demo-target start
+```
+
+It serves `GET /products/:sku`, `GET /cart/:id`, `POST /cart/items` and
+`POST /checkout` on [http://localhost:4200](http://localhost:4200) (or
+`$PORT`), with planted bugs: a 1.5 second stall every 30 seconds, about 2%
+`503`s on checkout, and about 1% schema drift on the cart. See the [quick
+start](/start/quick-start/#2-start-the-demo-target).
