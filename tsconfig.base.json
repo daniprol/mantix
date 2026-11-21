@@ -30,7 +30,9 @@
           "effect/http",
           "effect/cli",
           "effect/encoding",
-          "effect/testing"
+          "effect/testing",
+          "@effect/platform-node",
+          "@effect/vitest"
         ]
       }
     ]

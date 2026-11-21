@@ -1,0 +1,96 @@
+---
+title: Effect scenarios
+description: An optional way to write scenarios with Effect, for typed errors, retries, clean cancellation and testable tests.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+<Aside type="tip" title="Entirely optional">
+  Everything else in these docs works without Effect. Plain `async` scenarios
+  get every dashboard, statistics and CI feature. Read this page only if you
+  already use Effect, or are curious about it.
+</Aside>
+
+[Effect](https://effect.website) is a TypeScript library for writing programs
+that do many things at once, fail in well-understood ways, and clean up
+after themselves. Mantix's engine is written in it. `scenario.effect()` lets
+your test use it too.
+
+## The same shape, with Effects
+
+`scenario.effect()` takes the same options as `scenario()`. The only
+differences: `iteration` (and `setup`, `teardown`) return an **Effect**
+instead of a promise, and the `http` methods return Effects too.
+
+Here is a checkout journey that retries a busy checkout and treats a `409`
+as "already checked out" instead of a failure:
+
+```ts title="examples/checkout.effect.ts"
+import { Effect, Schedule } from 'effect'
+import { rate, scenario } from 'mantix'
+
+export default scenario.effect({
+  name: 'checkout (effect)',
+  baseUrl: 'http://localhost:4200',
+  load: rate.constant(20, { duration: '1m' }),
+  thresholds: ['p99 < 250ms', 'errors < 1%'],
+  iteration: ({ http, vu }) =>
+    Effect.gen(function* () {
+      const cartId = `cart-${vu}`
+      yield* http.post('/cart/items', { json: { cartId, sku: 'A1', qty: 1 } })
+
+      yield* http
+        .post('/checkout', {
+          json: { cartId },
+          okStatus: status => status < 400 || status === 409,
+        })
+        .pipe(
+          // Up to 2 retries, 100 ms apart, only for a 503.
+          Effect.retry({
+            schedule: Schedule.spaced('100 millis'),
+            times: 2,
+            while: error => error.status === 503,
+          }),
+        )
+    }),
+})
+```
+
+Every failed attempt is still recorded, so retries never hide errors from
+your results: you see the `503`s, and you see that the journey recovered.
+
+Run it like any other test:
+
+```sh
+pnpm mantix run examples/checkout.effect.ts
+```
+
+## When it's worth it
+
+Both kinds of scenario run on the same engine and produce the same results.
+Inside Mantix, an async iteration is wrapped once into an Effect, so neither
+is second class. Effect earns its place when a test needs one of these:
+
+| What you want                      | With plain async                                                                  | With Effect                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Stop a run cleanly                 | Mantix aborts its own requests through `signal`; other awaits finish on their own | Everything is interrupted at once, and every cleanup step still runs                  |
+| Handle errors                      | Thrown errors are caught and classified by Mantix                                 | Errors are typed in the signature, so you can handle one kind and let the rest fail   |
+| Retries and timeouts               | Write the loop by hand                                                            | `Schedule` and `Effect.timeout`, composed in one line                                 |
+| Parallel requests in one iteration | `Promise.all`; on failure the others keep running and still count as load         | `Effect.all` cancels the siblings, so the load you measure is the load you meant      |
+| Test the test itself               | Run it against the demo target                                                    | Swap `http` for a fake and fast-forward time with `TestClock`: no network, no waiting |
+| Shared helpers                     | Module-level variables                                                            | Your own services via Layers, such as a token cache shared by all VUs                 |
+
+If none of those rows matters for your test, stay with `scenario()`. You can
+switch one file at a time, and both kinds can run side by side in the same
+test file.
+
+## What's different in the context
+
+The iteration context has the same fields: `http`, `data`, `vu`,
+`iteration` and `signal`. Two details:
+
+- `http` is an `EffectHttp`. Its methods have the same names and options as
+  the async client, and fail with `RequestFailed` in Effect's error
+  channel, so `Effect.catchTag('RequestFailed', …)` works.
+- You rarely need `signal`. Stopping a run interrupts the Effect, which
+  cancels in-flight requests and runs any finalizers you added.

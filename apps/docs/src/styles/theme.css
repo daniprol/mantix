@@ -1,0 +1,604 @@
+/*
+ * The Mantix theme for Starlight.
+ *
+ * A precise instrument: warm-neutral paper and ink, 1px hairlines instead
+ * of boxes and shadows, one amber accent (links, focus, the active page),
+ * and red only for warnings and danger. Light and dark come from the same
+ * set of tokens.
+ *
+ * How it works: the --mx-* tokens below are the whole palette. The second
+ * block maps them onto Starlight's own --sl-* custom properties, so most
+ * of Starlight restyles itself. The rest of the file is a short list of
+ * targeted rules for things a custom property cannot reach. Starlight puts
+ * its own CSS in cascade layers, so these unlayered rules win without
+ * needing extra specificity.
+ */
+
+/* ------------------------------------------------------------------------
+ * 1. Tokens. Dark is Starlight's default (:root), light is data-theme.
+ * --------------------------------------------------------------------- */
+
+:root {
+  --mx-paper: oklch(0.175 0.006 70);
+  --mx-paper-2: oklch(0.205 0.007 70);
+  --mx-code-bg: oklch(0.2 0.007 70);
+  --mx-ink: oklch(0.94 0.008 80);
+  --mx-ink-2: oklch(0.78 0.008 80);
+  --mx-ink-3: oklch(0.6 0.008 75);
+  --mx-hairline: oklch(0.27 0.008 70);
+  --mx-hairline-strong: oklch(0.36 0.008 70);
+  --mx-accent: oklch(0.8 0.14 75);
+  --mx-accent-ink: oklch(0.82 0.13 75);
+  --mx-accent-wash: oklch(0.8 0.14 75 / 0.12);
+  --mx-slate: oklch(0.75 0.06 250);
+  --mx-danger: oklch(0.7 0.15 25);
+  --mx-danger-wash: oklch(0.7 0.15 25 / 0.1);
+}
+
+:root[data-theme='light'] {
+  --mx-paper: oklch(0.985 0.004 85);
+  --mx-paper-2: oklch(0.965 0.005 85);
+  --mx-code-bg: oklch(0.97 0.005 85);
+  --mx-ink: oklch(0.22 0.01 70);
+  --mx-ink-2: oklch(0.42 0.01 70);
+  --mx-ink-3: oklch(0.58 0.008 70);
+  --mx-hairline: oklch(0.91 0.006 80);
+  --mx-hairline-strong: oklch(0.84 0.007 80);
+  --mx-accent: oklch(0.72 0.15 68);
+  --mx-accent-ink: oklch(0.52 0.13 60);
+  --mx-accent-wash: oklch(0.72 0.15 68 / 0.14);
+  --mx-slate: oklch(0.5 0.06 250);
+  --mx-danger: oklch(0.55 0.19 27);
+  --mx-danger-wash: oklch(0.55 0.19 27 / 0.07);
+}
+
+/* ------------------------------------------------------------------------
+ * 2. Starlight's custom properties, mapped to the tokens.
+ * In Starlight, "white" is the strongest text and "black" the background,
+ * in both themes, so the same mapping works for light and dark.
+ * --------------------------------------------------------------------- */
+
+:root,
+:root[data-theme='light'] {
+  --sl-color-white: var(--mx-ink);
+  --sl-color-gray-1: var(--mx-ink);
+  --sl-color-gray-2: var(--mx-ink-2);
+  --sl-color-gray-3: var(--mx-ink-3);
+  --sl-color-gray-4: var(--mx-ink-3);
+  --sl-color-gray-5: var(--mx-hairline-strong);
+  --sl-color-gray-6: var(--mx-hairline);
+  --sl-color-gray-7: var(--mx-paper-2);
+  --sl-color-black: var(--mx-paper);
+
+  --sl-color-accent-low: var(--mx-accent-wash);
+  --sl-color-accent: var(--mx-accent);
+  --sl-color-accent-high: var(--mx-accent-ink);
+
+  --sl-color-text: var(--mx-ink-2);
+  --sl-color-text-accent: var(--mx-accent-ink);
+  --sl-color-text-invert: var(--mx-paper);
+  --sl-color-bg: var(--mx-paper);
+  --sl-color-bg-nav: var(--mx-paper);
+  --sl-color-bg-sidebar: var(--mx-paper);
+  --sl-color-bg-inline-code: var(--mx-paper-2);
+  --sl-color-bg-accent: var(--mx-accent);
+  --sl-color-hairline-light: var(--mx-hairline);
+  --sl-color-hairline: var(--mx-hairline);
+  --sl-color-hairline-shade: var(--mx-hairline);
+  --sl-color-backdrop-overlay: oklch(0.2 0.01 70 / 0.5);
+
+  /* Asides: notes and tips are neutral or amber; red is only for danger. */
+  --sl-color-blue-low: var(--mx-paper-2);
+  --sl-color-blue: var(--mx-slate);
+  --sl-color-blue-high: var(--mx-ink);
+  --sl-color-purple-low: var(--mx-accent-wash);
+  --sl-color-purple: var(--mx-accent);
+  --sl-color-purple-high: var(--mx-ink);
+  --sl-color-orange-low: var(--mx-accent-wash);
+  --sl-color-orange: var(--mx-accent);
+  --sl-color-orange-high: var(--mx-ink);
+  --sl-color-red-low: var(--mx-danger-wash);
+  --sl-color-red: var(--mx-danger);
+  --sl-color-red-high: var(--mx-ink);
+  --sl-color-green-low: var(--mx-paper-2);
+  --sl-color-green: var(--mx-ink-3);
+  --sl-color-green-high: var(--mx-ink);
+
+  /* No shadows anywhere: hairlines do the separating. */
+  --sl-shadow-sm: none;
+  --sl-shadow-md: none;
+  --sl-shadow-lg: none;
+
+  --sl-font: 'Geist Variable', 'Geist';
+  --sl-font-mono: 'Geist Mono Variable', 'Geist Mono';
+
+  /* Type scale: a calm 1.2 ratio, smaller than Starlight's poster sizes. */
+  --sl-text-body: 1rem;
+  --sl-text-code: 0.875rem;
+  --sl-line-height: 1.7;
+  --sl-line-height-headings: 1.2;
+  --sl-text-h1: 2rem;
+  --sl-text-h2: 1.375rem;
+  --sl-text-h3: 1.125rem;
+  --sl-text-h4: 1rem;
+  --sl-text-h5: 0.9375rem;
+
+  --sl-nav-height: 3.25rem;
+  --sl-sidebar-width: 16.5rem;
+  --sl-content-width: 44rem;
+}
+
+@media (min-width: 50em) {
+  :root,
+  :root[data-theme='light'] {
+    --sl-nav-height: 3.5rem;
+    --sl-text-h1: 2.5rem;
+    --sl-text-h2: 1.5rem;
+    --sl-text-h3: 1.1875rem;
+    --sl-text-h4: 1rem;
+  }
+}
+
+/* ------------------------------------------------------------------------
+ * 3. Base
+ * --------------------------------------------------------------------- */
+
+html {
+  color-scheme: dark;
+}
+html[data-theme='light'] {
+  color-scheme: light;
+}
+
+body {
+  background: var(--mx-paper);
+  font-feature-settings: 'ss01' off;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--mx-accent-wash);
+}
+
+:focus-visible {
+  outline: 2px solid var(--mx-accent);
+  outline-offset: 2px;
+}
+
+/* Numbers line up everywhere they appear in mono. */
+code,
+kbd,
+pre,
+.mx-num {
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-variant-ligatures: none;
+}
+
+/* ------------------------------------------------------------------------
+ * 4. Header and sidebar
+ * --------------------------------------------------------------------- */
+
+header.header,
+.page > header {
+  border-bottom-color: var(--mx-hairline);
+  background: color-mix(in oklch, var(--mx-paper) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+/* Social links are grey until hovered; amber stays for real links. */
+.social-icons a {
+  color: var(--mx-ink-3);
+}
+.social-icons a:hover {
+  color: var(--mx-ink);
+}
+.social-icons::after {
+  border-inline-end-color: var(--mx-hairline);
+}
+
+/* The search button: a quiet hairline field with a mono shortcut hint. */
+site-search button[data-open-modal] {
+  border: 1px solid var(--mx-hairline);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--mx-ink-3);
+  font-size: 0.875rem;
+}
+site-search button[data-open-modal]:hover {
+  border-color: var(--mx-hairline-strong);
+  color: var(--mx-ink-2);
+}
+site-search kbd {
+  font-family: var(--__sl-font-mono);
+  background: transparent;
+  border: 1px solid var(--mx-hairline);
+  border-radius: 2px;
+  color: var(--mx-ink-3);
+}
+site-search dialog {
+  border: 1px solid var(--mx-hairline-strong);
+  border-radius: 4px;
+  background: var(--mx-paper);
+}
+
+.sidebar-pane {
+  border-inline-end: 1px solid var(--mx-hairline);
+}
+
+/* Group labels: small, uppercase, set back. */
+.sidebar-content .top-level > li > details > summary .large {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--mx-ink-3);
+}
+.sidebar-content .top-level > li > details > summary .caret {
+  opacity: 0.5;
+  width: 0.875rem;
+}
+.sidebar-content .top-level > li + li {
+  margin-top: 1.25rem;
+}
+.sidebar-content ul ul li {
+  border-inline-start-color: var(--mx-hairline);
+  margin-inline-start: 0.5rem;
+  padding-inline-start: 0;
+}
+.sidebar-content a {
+  border-radius: 0;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--mx-ink-2);
+  /* Pull the link over its list's hairline so the active bar replaces it. */
+  margin-inline-start: -1px;
+  border-inline-start: 1px solid transparent;
+}
+.sidebar-content a:hover {
+  color: var(--mx-ink);
+}
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+  background: none;
+  color: var(--mx-ink);
+  font-weight: 500;
+  border-inline-start: 2px solid var(--mx-accent);
+  padding-inline-start: calc(0.75rem - 1px);
+}
+
+/* Right-hand table of contents. */
+.right-sidebar {
+  border-inline-start: 1px solid var(--mx-hairline);
+}
+.right-sidebar h2 {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--mx-ink-3);
+}
+starlight-toc a {
+  font-size: 0.8125rem;
+  color: var(--mx-ink-3);
+}
+starlight-toc a:hover {
+  color: var(--mx-ink);
+}
+starlight-toc a[aria-current='true'] {
+  color: var(--mx-accent-ink);
+}
+
+/* Mobile: a square hairline menu button instead of a filled circle. */
+.sl-menu-button,
+:root[data-theme='light'] .sl-menu-button {
+  border: 1px solid var(--mx-hairline-strong);
+  border-radius: 3px;
+  background: var(--mx-paper);
+  color: var(--mx-ink);
+}
+:root .sl-menu-button:has(~ :popover-open) {
+  background: var(--mx-paper-2);
+}
+mobile-starlight-toc .toggle {
+  border-color: var(--mx-hairline-strong);
+  border-radius: 3px;
+  background: var(--mx-paper);
+  font-size: 0.875rem;
+}
+
+mobile-starlight-toc nav {
+  border-bottom: 1px solid var(--mx-hairline);
+  background: var(--mx-paper);
+}
+
+/* ------------------------------------------------------------------------
+ * 5. Page content
+ * --------------------------------------------------------------------- */
+
+.content-panel {
+  border-top-color: var(--mx-hairline);
+}
+.content-panel + .content-panel {
+  border-top: 0;
+}
+
+h1#_top {
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--mx-ink);
+}
+
+.sl-markdown-content {
+  color: var(--mx-ink-2);
+}
+
+.sl-markdown-content :is(h2, h3, h4, h5) {
+  color: var(--mx-ink);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
+  margin-top: 3rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--mx-hairline);
+}
+.sl-markdown-content .sl-heading-wrapper.level-h3 {
+  margin-top: 2.25rem;
+}
+.sl-markdown-content .sl-heading-wrapper + * {
+  margin-top: 0.75rem;
+}
+.sl-markdown-content strong {
+  color: var(--mx-ink);
+  font-weight: 600;
+}
+
+/* Lead paragraph under the page title. */
+.sl-markdown-content > p:first-child,
+.sl-markdown-content > .sl-heading-wrapper:first-child + p {
+  font-size: 1.0625rem;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--mx-accent-ink);
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in oklch, var(--mx-accent) 45%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  text-decoration-color: var(--mx-accent);
+}
+
+/* Inline code. */
+.sl-markdown-content :not(pre) > code {
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border: 1px solid var(--mx-hairline);
+  border-radius: 3px;
+  background: var(--mx-paper-2);
+  color: var(--mx-ink);
+}
+.sl-markdown-content a > code {
+  color: inherit;
+}
+
+/* Tables: hairline rows, no zebra, no outer box. */
+.sl-markdown-content table {
+  font-size: 0.875rem;
+  border-collapse: collapse;
+}
+.sl-markdown-content :is(th, td) {
+  border: 0;
+  border-bottom: 1px solid var(--mx-hairline);
+  padding: 0.55rem 1rem 0.55rem 0;
+  vertical-align: top;
+}
+.sl-markdown-content th {
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mx-ink-3);
+  border-bottom-color: var(--mx-hairline-strong);
+  background: none;
+}
+.sl-markdown-content tr:nth-child(2n) {
+  background: none;
+}
+
+.sl-markdown-content hr {
+  border-color: var(--mx-hairline);
+}
+.sl-markdown-content blockquote {
+  border-inline-start: 2px solid var(--mx-hairline-strong);
+  color: var(--mx-ink-2);
+}
+
+kbd {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.8em;
+  border: 1px solid var(--mx-hairline-strong);
+  border-radius: 3px;
+  padding: 0.05em 0.35em;
+  background: var(--mx-paper-2);
+}
+
+/* Asides: a 2px rule on the left and a faint wash, no box. */
+.starlight-aside {
+  border: 0;
+  border-inline-start: 2px solid var(--sl-color-asides-border);
+  border-radius: 0;
+  padding: 0.875rem 1.125rem;
+}
+.starlight-aside__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.starlight-aside__icon {
+  display: none;
+}
+.starlight-aside--note {
+  --sl-color-asides-border: var(--mx-hairline-strong);
+  --sl-color-asides-text-accent: var(--mx-ink-2);
+  background: var(--mx-paper-2);
+}
+.starlight-aside--tip,
+.starlight-aside--caution {
+  --sl-color-asides-border: var(--mx-accent);
+  --sl-color-asides-text-accent: var(--mx-accent-ink);
+  background: color-mix(in oklch, var(--mx-accent) 7%, var(--mx-paper));
+}
+.starlight-aside--danger {
+  --sl-color-asides-border: var(--mx-danger);
+  --sl-color-asides-text-accent: var(--mx-danger);
+  background: var(--mx-danger-wash);
+}
+
+/* Starlight's Badge and LinkButton, flattened. */
+.sl-badge {
+  border-radius: 2px;
+  font-family: var(--__sl-font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+}
+.sl-link-button {
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+/* Code blocks: the frame is the only box we allow, drawn as a hairline. */
+.expressive-code {
+  margin-block: 1.5rem;
+}
+.expressive-code .frame {
+  box-shadow: none;
+}
+.expressive-code .frame .header::before {
+  border: 0;
+}
+
+/* Diagrams drawn inline in MDX. They use these classes, so they follow the
+   theme without any JavaScript. */
+.mx-diagram {
+  margin-block: 2rem;
+  padding: 1.25rem 0 0.5rem;
+  border-block: 1px solid var(--mx-hairline);
+}
+.mx-diagram svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  font-family: var(--__sl-font);
+  overflow: visible;
+}
+.mx-diagram figcaption {
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--mx-ink-3);
+}
+.mx-diagram .ink {
+  fill: var(--mx-ink);
+}
+.mx-diagram .ink-2 {
+  fill: var(--mx-ink-2);
+}
+.mx-diagram .ink-3 {
+  fill: var(--mx-ink-3);
+}
+.mx-diagram .label {
+  fill: var(--mx-ink-2);
+  font-size: 12px;
+}
+.mx-diagram .small {
+  fill: var(--mx-ink-3);
+  font-size: 11px;
+}
+.mx-diagram .mono {
+  font-family: var(--__sl-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.mx-diagram .rule {
+  stroke: var(--mx-hairline-strong);
+  stroke-width: 1;
+  fill: none;
+}
+.mx-diagram .axis {
+  stroke: var(--mx-ink-3);
+  stroke-width: 1;
+  fill: none;
+}
+.mx-diagram .bar {
+  fill: var(--mx-ink-3);
+}
+.mx-diagram .bar-faint {
+  fill: var(--mx-hairline-strong);
+}
+.mx-diagram .accent {
+  fill: var(--mx-accent);
+}
+.mx-diagram .accent-stroke {
+  stroke: var(--mx-accent);
+  stroke-width: 1.5;
+  fill: none;
+}
+.mx-diagram .danger {
+  fill: var(--mx-danger);
+}
+.mx-diagram .danger-stroke {
+  stroke: var(--mx-danger);
+  stroke-width: 1.5;
+  fill: none;
+}
+.mx-diagram .dashed {
+  stroke-dasharray: 3 3;
+}
+.mx-diagram .shade {
+  fill: var(--mx-paper-2);
+}
+.mx-diagram .stall {
+  fill: var(--mx-danger-wash);
+}
+
+/* ------------------------------------------------------------------------
+ * 6. Footer
+ * --------------------------------------------------------------------- */
+
+.pagination-links,
+footer .meta {
+  font-size: 0.875rem;
+}
+
+/* The threshold grammar figure: three mono parts with labels underneath. */
+.mx-grammar {
+  display: flex;
+  gap: 2rem;
+  margin-block: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--mx-hairline);
+  background: var(--mx-code-bg);
+}
+.mx-grammar span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.mx-grammar code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--__sl-font-mono);
+  font-size: 1.25rem;
+  color: var(--mx-ink);
+}
+.mx-grammar small {
+  font-size: 0.75rem;
+  color: var(--mx-ink-3);
+  border-top: 1px solid var(--mx-accent);
+  padding-top: 0.25rem;
+}

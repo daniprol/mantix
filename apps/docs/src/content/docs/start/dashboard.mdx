@@ -1,0 +1,91 @@
+---
+title: Reading the dashboard
+description: What each part of the live dashboard shows, and what to look for while a run is going.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+`mantix ui <file>` starts a local server and the dashboard at
+[http://localhost:4100](http://localhost:4100). Nothing leaves your machine.
+
+```sh
+pnpm mantix ui examples/checkout.ts
+```
+
+Press **Start** to begin the run and **Stop** to end it early. The run uses
+the load model, thresholds and scenarios from your file, exactly as
+`mantix run` would.
+
+<Aside type="caution" title="Work in progress">
+  The dashboard is being built now. This page describes the first version: the
+  views below exist, and their exact look will keep improving.
+</Aside>
+
+## The idea: time runs left to right
+
+A load test is a story that happens over time, so every chart shares one
+time axis, one column per second. New seconds appear at the right edge.
+Charts never re-animate old data, so what you saw a moment ago stays where
+it was.
+
+## Latency heatmap
+
+The largest chart. Each column is one second, each cell counts the requests
+that finished within a latency band, and darker means more requests. The
+vertical scale is logarithmic, so 5 ms and 5 s both fit.
+
+Two lines are drawn on top:
+
+- **p50**, the median: half the requests were faster than this.
+- **p99**: 99 in 100 requests were faster than this. This is usually the
+  number users feel, because a page makes many requests and one slow one
+  makes the page slow.
+
+What to look for: a band that drifts upwards (the server is slowing down as
+it fills up), a second band appearing above the first (some requests take a
+different, slower path), and vertical stripes (a stall, like the demo
+target's 30 second hiccup).
+
+The latencies here are corrected for coordinated omission: measured from
+when each iteration should have started. The uncorrected value is shown
+next to it, so you can see how much the correction matters. The
+[results page](/concepts/results/) explains both.
+
+## Throughput: target against achieved
+
+Two lines:
+
+- **Target**, dashed: the rate your load model asked for at that moment.
+- **Achieved**, solid: the iterations that actually started.
+
+When they overlap, Mantix is keeping up. When achieved falls below target,
+every allowed virtual user was busy waiting for the server, and new
+arrivals were **dropped** rather than queued. That gap is the clearest sign
+that the server is saturated. See [maxVus and dropped
+iterations](/concepts/load-models/#maxvus-and-dropped-iterations).
+
+## Errors
+
+Failed requests per second, split by kind, so a timeout never looks like a
+`503`:
+
+| Kind             | Means                                                                      |
+| ---------------- | -------------------------------------------------------------------------- |
+| `HttpStatus`     | The server answered with a status outside `okStatus` (by default 200–399). |
+| `Timeout`        | No answer within the request's `timeout`.                                  |
+| `Transport`      | The connection failed: refused, reset, DNS.                                |
+| `SchemaMismatch` | The status was fine but the body did not match `expect`.                   |
+| `ScriptError`    | Your test code threw. Shown apart, never counted as a server error.        |
+
+## Endpoints table
+
+One row per endpoint, named by its route template (`GET /cart/:id`), not by
+each concrete URL. Columns show requests, rate, latency percentiles and the
+error share. Click a row to expand it and see that endpoint on its own.
+
+## Thresholds
+
+Your thresholds are listed with their current measured value and whether
+they pass. They are checked while the run is going, so you see a failure
+the moment it happens. A threshold with `abortOnFail: true` stops the run
+there and then.

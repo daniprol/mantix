@@ -1,0 +1,187 @@
+/*
+ * The landing page (splash template). Starlight caps content at
+ * --sl-content-width; the landing page gets a wider measure and drops the
+ * hairline between the hero panel and the body, so the sections below can
+ * draw their own rules.
+ */
+:root[data-has-hero] {
+  --sl-content-width: 68rem;
+}
+:root[data-has-hero] .content-panel {
+  padding-inline: clamp(1rem, 4vw, 2.5rem);
+}
+:root[data-has-hero] .content-panel + .content-panel {
+  border-top: 0;
+  padding-top: 0;
+}
+:root[data-has-hero] .sl-markdown-content {
+  color: var(--mx-ink-2);
+}
+:root[data-has-hero] .sl-markdown-content > * + * {
+  margin-top: 0;
+}
+
+/* A section: a hairline across the top, a mono index, then content. */
+.mx-section {
+  display: grid;
+  /* minmax(0, …) lets wide code blocks scroll instead of widening the page. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem 3.5rem;
+  padding-block: 3.5rem;
+  border-top: 1px solid var(--mx-hairline);
+}
+@media (min-width: 60rem) {
+  .mx-section.split {
+    grid-template-columns: minmax(15rem, 4fr) minmax(0, 8fr);
+    align-items: start;
+  }
+}
+.mx-section > * {
+  min-width: 0;
+}
+/* A heading on its own introduces the block that follows it. */
+.mx-section.solo {
+  padding-bottom: 1.75rem;
+}
+.mx-section .eyebrow {
+  margin: 0;
+  font-family: var(--__sl-font-mono);
+  font-size: 0.75rem;
+  color: var(--mx-ink-3);
+}
+.mx-section h2 {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  border: 0;
+  font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+  color: var(--mx-ink);
+}
+.mx-section .copy p {
+  margin: 1rem 0 0;
+  max-width: 30rem;
+  line-height: 1.65;
+}
+.mx-section .copy ul {
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9375rem;
+}
+.mx-section .copy li {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--mx-hairline);
+}
+.mx-section .copy li:last-child {
+  border-bottom: 1px solid var(--mx-hairline);
+}
+.mx-section .copy li code {
+  font-size: 0.8125rem;
+}
+.mx-section .aside .expressive-code {
+  margin: 0;
+  --ec-codeFontSize: 0.75rem;
+}
+
+/* The four things Mantix is known for. */
+.mx-four {
+  display: grid;
+  grid-template-columns: 1fr;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--mx-hairline);
+}
+@media (min-width: 40rem) {
+  .mx-four {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (min-width: 64rem) {
+  .mx-four {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+.mx-four > div {
+  padding: 1.5rem 1.5rem 1.75rem 0;
+  border-bottom: 1px solid var(--mx-hairline);
+}
+@media (min-width: 40rem) {
+  .mx-four > div + div {
+    padding-left: 1.5rem;
+  }
+  .mx-four > div:nth-child(odd) {
+    border-right: 1px solid var(--mx-hairline);
+  }
+  .mx-four > div:nth-child(3) {
+    padding-left: 0;
+  }
+}
+@media (min-width: 64rem) {
+  .mx-four > div {
+    border-bottom: 0;
+  }
+  .mx-four > div:nth-child(3) {
+    padding-left: 1.5rem;
+    border-right: 1px solid var(--mx-hairline);
+  }
+}
+.mx-four .n {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.75rem;
+  color: var(--mx-accent-ink);
+}
+.mx-four h3 {
+  margin: 0.75rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--mx-ink);
+}
+.mx-four p {
+  margin: 0.5rem 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+/* The "where next" row at the bottom. */
+.mx-next {
+  display: grid;
+  grid-template-columns: 1fr;
+  border-top: 1px solid var(--mx-hairline);
+  margin-bottom: 3rem;
+}
+@media (min-width: 48rem) {
+  .mx-next {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.mx-next a {
+  display: block;
+  padding: 1.25rem 1.5rem 1.25rem 0;
+  border-bottom: 1px solid var(--mx-hairline);
+  text-decoration: none;
+}
+@media (min-width: 48rem) {
+  .mx-next a {
+    border-bottom: 0;
+  }
+  .mx-next a + a {
+    padding-left: 1.5rem;
+    border-left: 1px solid var(--mx-hairline);
+  }
+}
+.mx-next .t {
+  display: block;
+  font-weight: 500;
+  color: var(--mx-ink);
+}
+.mx-next .d {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--mx-ink-3);
+}
+.mx-next a:hover .t {
+  color: var(--mx-accent-ink);
+}

@@ -9,6 +9,7 @@
   "scripts": {
     "prepare": "prek install --hook-type pre-commit --hook-type pre-push || true",
     "dev": "pnpm --filter @mantix/web dev",
+    "mantix": "node packages/server/src/bin.ts",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "oxlint && effect-tsgo oxlint --type-aware -c .oxlintrc.effect.json --deny-warnings packages",

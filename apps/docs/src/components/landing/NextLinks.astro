@@ -1,0 +1,31 @@
+---
+/** Three plain links to start reading, separated by hairlines. */
+const links = [
+  {
+    href: '/start/quick-start/',
+    title: 'Quick start',
+    text: 'Run your first test against the demo target in five minutes.',
+  },
+  {
+    href: '/concepts/load-models/',
+    title: 'Load models',
+    text: 'Open or closed: pick the one that matches how users really arrive.',
+  },
+  {
+    href: '/concepts/results/',
+    title: 'Reading results honestly',
+    text: 'Percentiles, coordinated omission, and the two numbers Mantix shows.',
+  },
+]
+---
+
+<nav class="mx-next not-content" aria-label="Start reading">
+  {
+    links.map(link => (
+      <a href={link.href}>
+        <span class="t">{link.title} →</span>
+        <span class="d">{link.text}</span>
+      </a>
+    ))
+  }
+</nav>

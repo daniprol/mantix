@@ -1,0 +1,117 @@
+---
+title: Mantix
+description: Load tests that tell the truth, written in the TypeScript you already have.
+template: splash
+pagefind: false
+hero:
+  title: Load tests that tell the truth.
+  tagline: Written in the TypeScript you already have. Mantix measures latency from when each request should have started, shows percentiles you can trust, and draws a run as it happens.
+  actions:
+    - text: Quick start
+      link: /start/quick-start/
+      variant: primary
+    - text: What is Mantix?
+      link: /start/introduction/
+      variant: secondary
+---
+
+import FourThings from '../../components/landing/FourThings.astro'
+import NextLinks from '../../components/landing/NextLinks.astro'
+import Section from '../../components/landing/Section.astro'
+
+<Section eyebrow="01 / Write" title="A test is a TypeScript file.">
+  <p>
+    Describe one user’s journey as an ordinary async function. Mantix runs
+    it many times, on a schedule you choose, and records every request by
+    its route.
+  </p>
+  <ul>
+    <li>
+      <code>rate.ramping</code> sets how many journeys start each second.
+    </li>
+    <li>
+      <code>expect</code> checks the body with Zod, Valibot or Effect
+      Schema.
+    </li>
+    <li>
+      <code>thresholds</code> decide whether the run passes.
+    </li>
+  </ul>
+  <Fragment slot="aside">
+
+```ts title="examples/checkout.ts"
+import { rate, scenario } from 'mantix'
+import { z } from 'zod'
+
+const Cart = z.object({
+  id: z.string(),
+  items: z.array(z.object({ sku: z.string(), price: z.number() })),
+})
+
+export default scenario({
+  name: 'checkout',
+  baseUrl: 'http://localhost:4200',
+  load: rate.ramping({
+    stages: [
+      { duration: '10s', target: 50 }, // warm up
+      { duration: '50s', target: 50 }, // hold
+    ],
+  }),
+  thresholds: ['p99 < 250ms', 'errors < 1%'],
+  iteration: async ({ http, vu }) => {
+    const cartId = `cart-${vu}`
+    await http.get('/products/:sku', { params: { sku: 'A1' } })
+    await http.post('/cart/items', { json: { cartId, sku: 'A1', qty: 1 } })
+    await http.get('/cart/:id', { params: { id: cartId }, expect: Cart })
+    await http.post('/checkout', { json: { cartId } })
+  },
+})
+```
+
+  </Fragment>
+</Section>
+
+<Section eyebrow="02 / Why" title="Four things Mantix wants to be known for." />
+
+<FourThings />
+
+<Section eyebrow="03 / Run" title="Run it in a terminal, or watch it live.">
+  <p>
+    <code>mantix run</code> prints one line per second and a table at the
+    end, then exits with code 99 if a threshold failed, so it drops straight
+    into CI. <code>mantix ui</code> opens the same run in the dashboard.
+  </p>
+  <p>
+    Here the demo target stalls for 1.5 seconds every 30 seconds. The
+    median barely notices; the honest p99 does.
+  </p>
+  <Fragment slot="aside">
+
+```txt frame="terminal" title="pnpm mantix run examples/checkout.ts" del={16,19}
+   1s    10/s (target 10)   p99 14.2 ms   err 0.0%
+   2s    15/s (target 15)   p99 12.9 ms   err 0.0%
+  …
+  29s    50/s (target 50)   p99 13.8 ms   err 0.0%
+  30s    50/s (target 50)   p99 1.49 s    err 0.0%
+  31s    50/s (target 50)   p99 15.1 ms   err 2.0%
+  …
+
+endpoint              req     req/s   p50      p95      p99      max      errors
+GET /products/:sku    2,750   45.8    4.1 ms   9.8 ms   1.21 s   1.52 s   0.0%
+GET /cart/:id         2,750   45.8    5.3 ms   12.4 ms  1.24 s   1.53 s   1.0%
+POST /cart/items      2,750   45.8    6.0 ms   13.1 ms  1.25 s   1.53 s   0.0%
+POST /checkout        2,722   45.4    11.8 ms  24.6 ms  1.31 s   1.56 s   2.0%
+total                 10,972  182.9   6.2 ms   16.0 ms  1.27 s   1.56 s   0.8%
+
+✗ p99 < 250ms     1.27 s
+✓ errors < 1%     0.8%
+
+✗ FAILED: 1 of 2 thresholds failed
+```
+
+  </Fragment>
+</Section>
+
+<Section eyebrow="04 / Next" title="Where to start." />
+
+<NextLinks />

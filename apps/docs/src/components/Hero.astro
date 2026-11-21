@@ -1,0 +1,107 @@
+---
+/**
+ * Override of Starlight's Hero, used only by the landing page (the splash
+ * template). Left-aligned and typographic: a mono status line, the title,
+ * the tagline and two actions. No image, no gradient.
+ */
+// Starlight's page title id, which the skip link and anchors point to.
+const { data } = Astro.locals.starlightRoute.entry
+const { title = data.title, tagline, actions = [] } = data.hero ?? {}
+---
+
+<div class="hero">
+  <p class="status">
+    <span class="dot" aria-hidden="true"></span>
+    Pre-release · work in progress
+  </p>
+  <h1 id="_top" data-page-title set:html={title} />
+  {tagline && <p class="tagline" set:html={tagline} />}
+  {
+    actions.length > 0 && (
+      <div class="actions">
+        {actions.map(({ link, text, variant }) => (
+          <a
+            href={link}
+            class:list={['action', variant === 'primary' && 'primary']}
+          >
+            {text}
+            {variant === 'primary' && <span aria-hidden="true">→</span>}
+          </a>
+        ))}
+      </div>
+    )
+  }
+</div>
+
+<style>
+  .hero {
+    padding-block: clamp(2.5rem, 8vw, 6rem) clamp(2rem, 5vw, 3.5rem);
+    max-width: 46rem;
+  }
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 1.75rem;
+    font-family: var(--__sl-font-mono);
+    font-size: 0.75rem;
+    color: var(--mx-ink-3);
+  }
+  .dot {
+    width: 0.4375rem;
+    height: 0.4375rem;
+    border-radius: 50%;
+    background: var(--mx-accent);
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(2.25rem, 1.4rem + 3.6vw, 4rem);
+    line-height: 1.04;
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    color: var(--mx-ink);
+    text-wrap: balance;
+  }
+  .tagline {
+    margin: 1.5rem 0 0;
+    max-width: 36rem;
+    font-size: clamp(1.0625rem, 1rem + 0.4vw, 1.25rem);
+    line-height: 1.55;
+    color: var(--mx-ink-2);
+    text-wrap: pretty;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 2.25rem;
+  }
+  .action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2.5rem;
+    padding: 0 1.125rem;
+    border: 1px solid var(--mx-hairline-strong);
+    border-radius: 3px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--mx-ink);
+    text-decoration: none;
+    transition:
+      border-color 120ms ease-out,
+      background-color 120ms ease-out;
+  }
+  .action:hover {
+    border-color: var(--mx-ink-3);
+  }
+  .primary {
+    background: var(--mx-ink);
+    border-color: var(--mx-ink);
+    color: var(--mx-paper);
+  }
+  .primary:hover {
+    background: color-mix(in oklch, var(--mx-ink) 88%, var(--mx-paper));
+    border-color: transparent;
+  }
+</style>

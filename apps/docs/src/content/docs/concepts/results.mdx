@@ -1,0 +1,114 @@
+---
+title: Reading results honestly
+description: How Mantix computes percentiles, what coordinated omission is, and why it shows two latency numbers.
+---
+
+import CoordinatedOmission from '../../../components/diagrams/CoordinatedOmission.astro'
+
+A load test produces numbers that look precise. Some of the most common ones
+are quietly wrong. This page explains the two choices that make Mantix's
+numbers trustworthy, so you know what you are reading.
+
+## Percentiles, not averages
+
+An **average** latency hides the requests that matter. If 98 requests take
+10 ms and 2 take 3 seconds, the average is about 70 ms, a number no request
+actually experienced.
+
+A **percentile** answers a concrete question. **p99 = 180 ms** means "99 in
+100 requests finished in 180 ms or less". p50 is the median, the typical
+request. p99 is the slow tail, and it is usually what users feel: a page that
+makes 30 requests hits its p99 on most loads.
+
+Mantix shows p50, p90, p95, p99 and max. It never shows an average latency.
+
+### Merged histograms, never averaged percentiles
+
+Mantix records every latency into a **histogram** per endpoint, per second:
+a set of counters, one per narrow latency band. Histograms can be merged
+exactly by adding the counters. To get the p99 for a minute, an endpoint or
+the whole run, Mantix merges the right seconds and reads the percentile from
+the result.
+
+What it never does is **average percentiles**. The p99 of a minute is not
+the average of sixty per-second p99s, and the p99 of a service is not the
+average of its endpoints' p99s. Averaging percentiles gives a number with no
+meaning, and it is a common mistake in dashboards. Because Mantix keeps
+histograms, it can recompute any window exactly instead.
+
+The bands are narrow (about 1% wide), so a reported value is within about
+1% of the true one.
+
+## Coordinated omission
+
+This is the big one. It is why many load tests report a healthy p99 for a
+server that users would call broken.
+
+A classic load tester sends a request, **waits** for the answer, then sends
+the next one. Now imagine the server freezes for 1.5 seconds. The tester
+sends one request, which takes 1.5 s, and records one slow sample. During
+that freeze it sends nothing else. But real users kept arriving. Every one
+of them waited too, and none of them was measured. The tool has
+**coordinated** with the server to **omit** the bad moments.
+
+<CoordinatedOmission />
+
+Mantix avoids this in two ways:
+
+1. **It keeps the schedule.** With the open model (`rate.*`), iterations
+   start when the plan says they should, whether or not the server has
+   answered earlier ones. See [Load models](/concepts/load-models/).
+2. **It measures from the intended start.** Each latency is measured from
+   when the request _should_ have started, not from when it was actually
+   sent. If the generator itself fell behind, that delay is counted too: a
+   user would have felt it.
+
+### The wrk2 example
+
+Gil Tene's [wrk2](https://github.com/giltene/wrk2) made this problem
+famous. In its own example, a server stalled for 1.4 seconds during a test.
+A closed-loop measurement reported a **p99 of 6 ms**. Corrected for
+coordinated omission, the same run had a **p99 of 1.27 s**. Same server,
+same stall: two hundred times apart.
+
+You can reproduce the effect with the demo target, which stalls for 1.5
+seconds every 30 seconds:
+
+```sh
+pnpm mantix run examples/quick.ts
+```
+
+The p50 stays at a few milliseconds. The p99 lands over a second, because
+for 1.5 s out of every 30 (5% of the time), every arriving request waits.
+
+## Corrected and uncorrected
+
+Mantix shows both numbers, clearly labelled:
+
+- **Corrected** (the default, and what thresholds use): measured from the
+  intended start. This is what users experienced.
+- **Uncorrected**: measured from when the request was actually sent. This
+  is closer to the server's own processing time.
+
+When the two are close, the server kept up and the generator kept its
+schedule. When they diverge, requests were waiting: in the server's queue,
+or because the generator could not send them on time. The gap is the
+interesting part, so Mantix shows it instead of picking one silently.
+
+With the closed model (`vus.*`) there is no schedule to be late against, so
+the two numbers match. That is one more reason to prefer the open model.
+
+## Low sample counts
+
+A p99 computed from 40 requests is not a p99; it is roughly the
+second-slowest request. Where the sample is too small for a percentile to
+mean much, Mantix says so (for example `n<100`) instead of printing a precise
+looking number.
+
+## Errors are classified
+
+A failure is recorded once, with a kind: `Transport`, `Timeout`,
+`HttpStatus` or `SchemaMismatch`. Errors thrown by your own test code are a
+separate kind, `ScriptError`, and never count as server errors. When a run
+fails its `errors < 1%` threshold, you can see straight away whether the
+server returned 503s, timed out, or sent a body of the wrong shape.
