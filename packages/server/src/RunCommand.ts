@@ -205,10 +205,4 @@ const run = Command.make(
   }),
 ).pipe(Command.withDescription('Run a test file headless and print a summary'))
 
-/** The root `mantix` command. `ui` joins `run` in the next pull request. */
-export const mantix = Command.make('mantix').pipe(
-  Command.withDescription(
-    'Load tests that tell the truth, written in TypeScript',
-  ),
-  Command.withSubcommands([run]),
-)
+export { run }

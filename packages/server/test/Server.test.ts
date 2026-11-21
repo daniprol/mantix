@@ -1,0 +1,107 @@
+import { Layer, Schema } from 'effect'
+import { HttpRouter, HttpServer } from 'effect/http'
+import { type Server, createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
+import { RunInfo, TestInfo } from '@mantix/api'
+import { rate, scenario } from '@mantix/core'
+
+import { Runs } from '../src/Runs.ts'
+import { ApiRoutes } from '../src/Server.ts'
+
+// A tiny target server for the test run to hit.
+let target: Server
+let handler: (request: Request) => Promise<Response>
+let dispose: () => Promise<void>
+
+beforeAll(async () => {
+  target = createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json')
+    res.end('{"ok":true}')
+  })
+  await new Promise<void>(resolve => target.listen(0, resolve))
+  const { port } = target.address() as AddressInfo
+
+  const test = scenario({
+    name: 'tiny',
+    baseUrl: `http://localhost:${port}`,
+    load: rate.constant(20, { duration: '2s' }),
+    thresholds: ['errors < 1%'],
+    iteration: async ({ http }) => {
+      await http.get('/ok')
+    },
+  })
+  // toWebHandler turns the API layer into a plain fetch-style function, so
+  // we can call it without opening a port.
+  ;({ handler, dispose } = HttpRouter.toWebHandler(
+    ApiRoutes.pipe(
+      Layer.provide(Runs.layer(test, 'tiny.ts')),
+      Layer.provide(HttpServer.layerServices),
+    ),
+  ))
+})
+
+afterAll(async () => {
+  await dispose()
+  target.close()
+})
+
+const call = (path: string, init?: RequestInit) =>
+  handler(new Request(`http://mantix.test${path}`, init))
+
+// Decode responses with the same schemas the dashboard uses.
+const asRun = async (response: Response) =>
+  Schema.decodeUnknownSync(RunInfo)(await response.json())
+
+const post = (path: string, body: unknown = {}) =>
+  call(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+describe('mantix ui server', () => {
+  it('describes the loaded test', async () => {
+    const response = await call('/api/test')
+    expect(response.status).toBe(200)
+    const info = Schema.decodeUnknownSync(TestInfo)(await response.json())
+    expect(info.name).toBe('tiny')
+    expect(info.thresholds).toEqual(['errors < 1%'])
+  })
+
+  it('starts a run, refuses a second one, and streams it live', async () => {
+    const started = await post('/api/runs')
+    expect(started.status).toBe(200)
+    const run = await asRun(started)
+    expect(run.status).toBe('running')
+
+    const second = await post('/api/runs')
+    expect(second.status).toBe(409)
+
+    // The event stream replays the run and ends when the run ends.
+    const events = await call(`/api/runs/${run.id}/events`)
+    expect(events.headers.get('content-type')).toContain('text/event-stream')
+    const text = await events.text()
+    expect(text).toContain('"_tag":"Second"')
+    expect(text).toContain('"status":"finished"')
+
+    const list = Schema.decodeUnknownSync(Schema.Array(RunInfo))(
+      await (await call('/api/runs')).json(),
+    )
+    expect(list).toHaveLength(1)
+    expect(list[0]!.status).toBe('finished')
+    expect(list[0]!.thresholds[0]!.passed).toBe(true)
+  }, 15_000)
+
+  it('stops a run early', async () => {
+    const run = await asRun(await post('/api/runs', { duration: 30 }))
+    const stopped = await asRun(await post(`/api/runs/${run.id}/stop`))
+    expect(stopped.status).toBe('stopped')
+  }, 15_000)
+
+  it('answers 404 for a run that does not exist', async () => {
+    const response = await call('/api/runs/nope')
+    expect(response.status).toBe(404)
+  })
+})
