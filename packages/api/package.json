@@ -1,0 +1,16 @@
+{
+  "name": "@mantix/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Mantix data schemas and HTTP contract, shared by server and dashboard",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  }
+}

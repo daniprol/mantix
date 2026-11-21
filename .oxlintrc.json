@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_",
+        "destructuredArrayIgnorePattern": "^_"
+      }
+    ],
+    "typescript/no-explicit-any": "error",
+    "sort-imports": [
+      "error",
+      { "ignoreDeclarationSort": true, "ignoreCase": false }
+    ]
+  },
+  "ignorePatterns": [
+    "dist/",
+    "node_modules/",
+    "repos/",
+    "**/*.d.ts",
+    "apps/docs/.astro/",
+    "playwright-report/",
+    "test-results/"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@mantix/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Mantix engine: scheduler, virtual users, HTTP client and recorder",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@mantix/api": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:"
+  }
+}
