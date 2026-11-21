@@ -1,0 +1,19 @@
+{
+  "name": "@mantix/docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Mantix documentation site (Astro Starlight)",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/mdx": "catalog:",
+    "@astrojs/starlight": "catalog:",
+    "@fontsource-variable/geist": "catalog:",
+    "@fontsource-variable/geist-mono": "catalog:",
+    "astro": "catalog:"
+  }
+}
