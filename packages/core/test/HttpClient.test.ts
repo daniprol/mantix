@@ -165,7 +165,7 @@ describe('http client', () => {
   it('corrects the first request of a late iteration only', async () => {
     fresh()
     // The schedule wanted this iteration 500 ms ago (a stalled generator).
-    const timing = makeTiming(now() - 500)
+    const timing = makeTiming(now() - 500, now())
     await send(config, timing, 'GET', '/wait', { name: 'first' }, undefined)
     await send(config, timing, 'GET', '/wait', { name: 'second' }, undefined)
     const [first, later] = second().endpoints
@@ -177,6 +177,17 @@ describe('http client', () => {
     )
     // The second request was not delayed by the schedule.
     expect(later!.latency.max).toBe(later!.uncorrected.max)
+  })
+
+  it('does not count think time before the first request as lateness', async () => {
+    fresh()
+    // The iteration started exactly on time, then "thought" for 200 ms.
+    const startedAt = now()
+    const timing = makeTiming(startedAt, startedAt)
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await send(config, timing, 'GET', '/wait', { name: 'first' }, undefined)
+    const [first] = second().endpoints
+    expect(first!.latency.max).toBe(first!.uncorrected.max)
   })
 
   it('throws a plain Error (a ScriptError) for a path with no host', async () => {

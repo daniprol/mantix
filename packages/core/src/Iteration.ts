@@ -155,7 +155,7 @@ export const prepareScenario = (
   const iteration = (data: unknown, vu: number, intendedStart?: number) =>
     Effect.suspend(() => {
       recorder.iterationStarted()
-      return body(data, vu, makeTiming(intendedStart)).pipe(
+      return body(data, vu, makeTiming(intendedStart, config.now())).pipe(
         Effect.onExit(exit => Effect.sync(() => recordOutcome(exit))),
         // The outcome is recorded; the error itself is not needed any more.
         Effect.ignoreCause,

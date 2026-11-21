@@ -68,20 +68,34 @@ export interface ClientConfig {
  * their corrected latency equals the uncorrected one. Requests sent in
  * parallel with the first one (Promise.all) share its delay.
  *
+ * The delay is measured when the iteration starts, not when its first
+ * request starts, so think time written before the first request is not
+ * mistaken for the schedule running late.
+ *
  * In the closed model `intendedStart` is undefined: a VU starts its next
  * iteration when the last one ends, so intended and actual start are equal.
  */
 export interface IterationTiming {
   readonly intendedStart: number | undefined
-  /** The delay the first request saw, once it has started. */
-  firstDelay: number | undefined
+  /** How late the iteration started (ms), or undefined in the closed model. */
+  readonly firstDelay: number | undefined
   /** Set when the first request has finished; later ones get no delay. */
   firstDone: boolean
 }
 
-export const makeTiming = (intendedStart?: number): IterationTiming => ({
+/**
+ * `startedAt` is when the iteration actually began; together with
+ * `intendedStart` it gives how late the schedule was.
+ */
+export const makeTiming = (
+  intendedStart?: number,
+  startedAt?: number,
+): IterationTiming => ({
   intendedStart,
-  firstDelay: undefined,
+  firstDelay:
+    intendedStart === undefined || startedAt === undefined
+      ? undefined
+      : Math.max(0, startedAt - intendedStart),
   firstDone: false,
 })
 
@@ -211,8 +225,7 @@ export const send = async <Body>(
   const start = config.now()
   // Coordinated-omission correction: see IterationTiming.
   let delay = 0
-  if (timing.intendedStart !== undefined && !timing.firstDone) {
-    timing.firstDelay ??= Math.max(0, start - timing.intendedStart)
+  if (timing.firstDelay !== undefined && !timing.firstDone) {
     delay = timing.firstDelay
   }
 

@@ -294,8 +294,8 @@ const checkThresholds = (
   secondCount: number,
 ): Array<ThresholdResult> => {
   if (thresholds.length === 0) return []
-  // summarizeSeconds over one merged "second", then fix the rates, which
-  // must be divided by the real number of seconds.
+  // summarizeSeconds over one merged "second"; rates are divided by the
+  // real number of seconds so far.
   const merged: Second = {
     t: 0,
     target: 0,
@@ -310,14 +310,10 @@ const checkThresholds = (
     endpoints: [...totals.values()],
     errorSamples: [],
   }
-  const stats = summarizeSeconds([merged])
-  const perSecond = Math.max(1, secondCount)
-  const fix = <S extends { readonly requests: number }>(s: S) => ({
-    ...s,
-    rps: s.requests / perSecond,
-  })
-  const total = fix(stats.total)
-  const endpoints = stats.endpoints.map(fix)
+  const { total, endpoints } = summarizeSeconds(
+    [merged],
+    Math.max(1, secondCount),
+  )
   return thresholds.map(threshold => evaluate(threshold, total, endpoints))
 }
 

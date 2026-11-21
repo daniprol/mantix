@@ -106,9 +106,14 @@ const statsFor = (
 /**
  * Stats per endpoint (sorted by name) and for all endpoints together, over
  * any list of Seconds. Pass a slice to summarise a window.
+ *
+ * `elapsedSeconds` is what req/s divides by. It defaults to the number of
+ * Seconds; pass the planned duration to ignore the short extra Second in
+ * which the last in-flight requests finish.
  */
 export const summarizeSeconds = (
   seconds: ReadonlyArray<Second>,
+  elapsedSeconds: number = seconds.length,
 ): {
   readonly total: EndpointStats
   readonly endpoints: Array<EndpointStats>
@@ -123,7 +128,7 @@ export const summarizeSeconds = (
       all.push(part)
     }
   }
-  const count = seconds.length
+  const count = elapsedSeconds
   const endpoints = [...byEndpoint.entries()]
     .map(([name, parts]) => statsFor(name, parts, count))
     .sort((a, b) => a.endpoint.localeCompare(b.endpoint))
@@ -142,7 +147,13 @@ export const summarizeRun = (
     iterations.failed += second.failed
     iterations.dropped += second.dropped
   }
-  const { total, endpoints } = summarizeSeconds(seconds)
+  // A run usually ends with one short extra Second while in-flight requests
+  // finish; don't let it drag req/s down.
+  const elapsed =
+    run.duration > 0
+      ? Math.min(seconds.length, Math.ceil(run.duration))
+      : seconds.length
+  const { total, endpoints } = summarizeSeconds(seconds, elapsed)
   return {
     version: 1,
     run,
