@@ -1,0 +1,45 @@
+# pnpm workspace: every folder under packages/ and apps/ is a package.
+packages:
+  - packages/*
+  - apps/*
+  - examples
+
+# One place for shared versions. Packages write "effect": "catalog:".
+# Strict mode refuses versions that are not in the catalog, so nothing drifts.
+catalogMode: strict
+
+catalog:
+  # Runtime
+  effect: 4.1.5
+  '@effect/platform-node': 4.1.5
+  '@effect/platform-browser': 4.1.5
+  '@effect/vitest': 4.1.5
+  foldkit: 0.171.0
+  '@foldkit/ui': 0.171.0
+  '@foldkit/devtools': 0.171.0
+  '@foldkit/vite-plugin': 0.29.1
+  '@foldkit/oxlint-plugin': 0.15.4
+  '@foldkit/devtools-mcp': 0.26.0
+  undici: 8.13.1
+  uplot: 1.6.32
+
+  # Lint quartet: these four only work in matching combinations.
+  # Upgrade them together, using the @effect/tsgo README compatibility table.
+  typescript: 7.0.2
+  '@effect/tsgo': 0.73.2
+  oxlint: 1.94.0
+  oxlint-tsgolint: 7.0.2007
+
+  # Tooling
+  oxfmt: 0.79.0
+  '@j178/prek': 0.5.11
+  knip: 6.47.0
+  tsdown: 0.23.7
+  vite: 8.3.8
+  vitest: 5.1.1
+  happy-dom: ^20.14.5
+  tailwindcss: 4.3.5
+  '@tailwindcss/vite': 4.3.5
+  '@types/node': ^24.0.0
+  '@playwright/test': 1.65.1
+  '@changesets/cli': 3.0.3

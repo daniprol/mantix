@@ -1,0 +1,38 @@
+{
+  // Shared compiler settings for every package. Each package has a small
+  // tsconfig.json that extends this one and lists its own files.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    // Node runs our .ts files directly (type stripping), so only use syntax
+    // that can be erased: no enums, no namespaces, no parameter properties.
+    "erasableSyntaxOnly": true,
+    // Imports keep their .ts extension so Node can run the source as-is.
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": { "schemaClassMissingBrand": "off" },
+        // effect/http-api, effect/cli and friends are marked unstable. We
+        // use them on purpose and pin exact versions instead.
+        "allowedUnstableApis": [
+          "effect/http-api",
+          "effect/http",
+          "effect/cli",
+          "effect/encoding",
+          "effect/testing"
+        ]
+      }
+    ]
+  }
+}

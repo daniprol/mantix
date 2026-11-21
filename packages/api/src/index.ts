@@ -1,0 +1,9 @@
+/**
+ * @mantix/api: the data shapes and HTTP contract shared by every part of
+ * Mantix. It is safe to import in the browser: no Node APIs, no engine code.
+ */
+export * as Histogram from './Histogram.ts'
+export * from './MantixApi.ts'
+export * from './Run.ts'
+export * from './Second.ts'
+export * from './Summary.ts'

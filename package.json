@@ -1,0 +1,34 @@
+{
+  "name": "mantix-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.21.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "prepare": "prek install --hook-type pre-commit --hook-type pre-push || true",
+    "dev": "pnpm --filter @mantix/web dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "oxlint && effect-tsgo oxlint --type-aware -c .oxlintrc.effect.json --deny-warnings packages",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "knip": "knip",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@changesets/cli": "catalog:",
+    "@effect/tsgo": "catalog:",
+    "@j178/prek": "catalog:",
+    "@types/node": "catalog:",
+    "knip": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

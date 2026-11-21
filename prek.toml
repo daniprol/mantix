@@ -1,0 +1,38 @@
+# Git hooks, run by prek (a fast Rust replacement for pre-commit).
+# They are installed by `pnpm install`. Quick checks run on commit; the
+# slower ones (typecheck, tests) run on push.
+#:schema https://www.schemastore.org/prek.json
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace" },
+  { id = "end-of-file-fixer" },
+  { id = "check-added-large-files" },
+  { id = "check-merge-conflict" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  # Format staged files in place.
+  { id = "oxfmt", name = "format (oxfmt)", language = "system", entry = "pnpm exec oxfmt --no-error-on-unmatched-pattern", types_or = [
+    "ts",
+    "javascript",
+    "json",
+    "css",
+    "markdown",
+    "yaml",
+  ] },
+  # Lint the staged TypeScript files.
+  { id = "oxlint", name = "lint (oxlint)", language = "system", entry = "pnpm exec oxlint", types_or = [
+    "ts",
+    "javascript",
+  ] },
+  { id = "typecheck", name = "typecheck", language = "system", entry = "pnpm typecheck", pass_filenames = false, stages = [
+    "pre-push",
+  ] },
+  { id = "test", name = "unit tests", language = "system", entry = "pnpm test", pass_filenames = false, stages = [
+    "pre-push",
+  ] },
+]
