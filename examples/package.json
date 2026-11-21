@@ -1,0 +1,17 @@
+{
+  "name": "@mantix/examples",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Example Mantix tests, written against apps/demo-target",
+  "type": "module",
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "mantix": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

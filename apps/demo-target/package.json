@@ -1,0 +1,14 @@
+{
+  "name": "@mantix/demo-target",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A small HTTP shop with planted bugs, for trying Mantix against",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.ts",
+    "typecheck": "effect-tsgo tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}
