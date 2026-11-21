@@ -1,0 +1,129 @@
+---
+title: Thresholds
+description: Pass/fail rules for a run, written as short expressions like "p99 < 250ms", and how they turn into exit codes for CI.
+---
+
+A threshold is a rule the run must keep, such as "99% of requests are faster
+than 250 ms" or "fewer than 1% of requests fail". If any threshold fails,
+`mantix run` exits with code `99`, which fails a CI job.
+
+```ts
+export default scenario({
+  // …
+  thresholds: [
+    'p99 < 250ms', // 99% of requests faster than 250 ms
+    'max < 2s', // no request slower than 2 s
+    'errors < 1%', // fewer than 1 in 100 requests fail
+    'rps > 100', // at least 100 requests per second complete
+  ],
+})
+```
+
+## The grammar
+
+Each threshold is one short expression: **metric**, **operator**, **value**.
+
+<p class="mx-grammar not-content">
+  <span>
+    <code>p99</code>
+    <small>metric</small>
+  </span>
+  <span>
+    <code>&lt;</code>
+    <small>operator</small>
+  </span>
+  <span>
+    <code>250ms</code>
+    <small>value and unit</small>
+  </span>
+</p>
+
+| Metric                     | Measures                           | Units                 |
+| -------------------------- | ---------------------------------- | --------------------- |
+| `p50`, `p90`, `p95`, `p99` | That latency percentile.           | `ms` (default) or `s` |
+| `max`                      | The slowest request.               | `ms` (default) or `s` |
+| `errors`                   | The share of requests that failed. | `%` (required)        |
+| `rps`                      | Completed requests per second.     | none, or `/s`         |
+
+Operators are `<`, `<=`, `>` and `>=`. Spaces are optional.
+
+Some examples, and what they mean:
+
+| Threshold       | Passes when                                  |
+| --------------- | -------------------------------------------- |
+| `'p99 < 250ms'` | 99% of requests finished in under 250 ms.    |
+| `'p95 <= 0.5s'` | 95% finished in half a second or less.       |
+| `'max < 2s'`    | No request at all took 2 seconds or more.    |
+| `'errors < 1%'` | Fewer than 1 in 100 requests failed.         |
+| `'rps > 100'`   | More than 100 requests per second completed. |
+
+A number without a unit is milliseconds for latency metrics: `'p99 < 250'`
+is the same as `'p99 < 250ms'`. Error limits must be written as a
+percentage, so `'errors < 0.01'` is refused with a message that suggests
+`'errors < 1%'`.
+
+Latency thresholds use the corrected latency, measured from when each
+request should have started. See [Reading results
+honestly](/concepts/results/#coordinated-omission).
+
+`errors` counts failed requests: transport errors, timeouts, statuses
+outside `okStatus` and schema mismatches. Errors thrown by your own test code
+(`ScriptError`) are not counted.
+
+## One endpoint at a time
+
+A plain string applies to all endpoints of the scenario together. To set a
+rule for one endpoint, use the object form with the endpoint's name:
+
+```ts
+thresholds: [
+  'p99 < 250ms',
+  { endpoint: 'POST /checkout', check: 'p99 < 800ms' },
+  { endpoint: 'GET /cart/:id', check: 'errors < 0.5%' },
+],
+```
+
+The name is the method and the route template, exactly as it appears in the
+results table: `POST /checkout`, `GET /cart/:id`. If you set `name` on a
+request, use that name instead.
+
+An endpoint with no requests yet passes, so a threshold on an endpoint that
+only starts later in the run doesn't fail at the first second.
+
+## Stop early with abortOnFail
+
+Thresholds are checked while the run is going, not only at the end. Add
+`abortOnFail: true` to stop the whole run as soon as that rule fails:
+
+```ts
+thresholds: [
+  { check: 'errors < 5%', abortOnFail: true },
+  'p99 < 250ms',
+],
+```
+
+This saves time (and your staging environment) when the server is clearly
+falling over. The run still writes its results, and the exit code is `99`.
+
+## Exit codes
+
+| Code | When                                                                      |
+| ---- | ------------------------------------------------------------------------- |
+| `0`  | The run finished and every threshold passed.                              |
+| `99` | At least one threshold failed, or one with `abortOnFail` stopped the run. |
+| `1`  | The run could not happen: a bad test file, a bad threshold, a crash.      |
+
+`99` is the same code k6 uses, so existing CI scripts that check for it keep
+working. A threshold Mantix can't read is a code `1` error before any load is
+sent, so a typo never passes quietly.
+
+## Writing good thresholds
+
+- Prefer **p99** (or p95) over the median. The median tells you about the
+  typical request; users remember the slow ones.
+- Add a **`max`** limit loose enough to survive normal noise but tight
+  enough to catch a stuck request.
+- Put **`errors`** on every test. A fast server that fails 10% of requests
+  is not fast.
+- Use **per-endpoint** rules when endpoints have different budgets. A search
+  endpoint and a checkout endpoint rarely share one.

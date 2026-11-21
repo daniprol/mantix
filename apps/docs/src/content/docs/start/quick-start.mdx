@@ -1,0 +1,163 @@
+---
+title: Quick start
+description: Run Mantix from the repository, point it at the demo target, and read your first results.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+In about five minutes you will run a load test against a small demo server,
+read the results in your terminal, and then watch the same test live in the
+dashboard. No Effect knowledge needed, and none of it touches the internet.
+
+<Aside type="caution" title="Running from the repository">
+  Mantix is not on npm yet, so there is no `npm install mantix`. Until the first
+  release you clone the repository and run the CLI from there with `pnpm
+  mantix`. Once it is published, the same commands become `npx mantix`.
+</Aside>
+
+## What you need
+
+- **Node 22.19 or newer.** The repository pins Node 24 in `.node-version`,
+  which most version managers pick up.
+- **pnpm 12.** pnpm manages its own version, so any recent pnpm will switch
+  to the right one.
+- **git.**
+
+## 1. Get the code
+
+Clone the repository and install its dependencies:
+
+```sh
+git clone https://github.com/daniprol/mantix.git
+cd mantix
+pnpm install
+```
+
+From now on, `pnpm mantix` runs the CLI straight from its TypeScript source
+(`packages/server/src/bin.ts`) with Node. There is no build step.
+
+## 2. Start the demo target
+
+The repository ships a small HTTP server to practise on. It behaves like a
+tiny shop, and it has a few bugs planted on purpose so there is something to
+find. Start it in its own terminal and leave it running:
+
+```sh
+pnpm --filter @mantix/demo-target start
+```
+
+It listens on `http://localhost:4200` (set `PORT` to change it):
+
+| Endpoint             | What it does                                    |
+| -------------------- | ----------------------------------------------- |
+| `GET /products/:sku` | Returns `{ sku, name, price }`.                 |
+| `GET /cart/:id`      | Returns `{ id, items: [{ sku, qty, price }] }`. |
+| `POST /cart/items`   | Adds `{ cartId, sku, qty }`, returns the cart.  |
+| `POST /checkout`     | Takes `{ cartId }`, returns `{ orderId }`.      |
+| `GET /health`        | Returns `{ ok: true }`.                         |
+
+And the planted bugs:
+
+- Every 30 seconds the server **stalls for 1.5 seconds**.
+- About **2% of checkouts fail** with `503 Service Unavailable`.
+- About **1% of cart responses** send `price` as a string instead of a
+  number. The status is still 200, so only a schema check will catch it.
+
+## 3. Run your first test
+
+The repository has a ready-made test in `examples/quick.ts`:
+
+```ts title="examples/quick.ts"
+import { rate, scenario } from 'mantix'
+
+export default scenario({
+  name: 'quick',
+  baseUrl: 'http://localhost:4200',
+  // Start 50 iterations every second, for 30 seconds.
+  load: rate.constant(50, { duration: '30s' }),
+  thresholds: ['p99 < 250ms', 'errors < 1%'],
+  iteration: async ({ http }) => {
+    await http.get('/products/:sku', { params: { sku: 'A1' } })
+  },
+})
+```
+
+Run it:
+
+```sh
+pnpm mantix run examples/quick.ts
+```
+
+Mantix prints one line per second while the test runs:
+
+```txt frame="terminal"
+   1s    50/s (target 50)   p99 6.8 ms    err 0.0%
+   2s    50/s (target 50)   p99 5.9 ms    err 0.0%
+   3s    50/s (target 50)   p99 6.1 ms    err 0.0%
+  …
+```
+
+Each line shows the second, how many iterations actually started against the
+target, the 99th percentile latency for that second, and the share of failed
+requests. When the run ends you get a table per endpoint, then each
+threshold with its measured value, then a verdict:
+
+```txt frame="terminal"
+endpoint              req     req/s   p50      p95      p99      max      errors
+GET /products/:sku    1,500   50.0    3.9 ms   8.7 ms   1.18 s   1.51 s   0.0%
+
+✗ p99 < 250ms     1.18 s
+✓ errors < 1%     0.0%
+
+✗ FAILED: 1 of 2 thresholds failed
+```
+
+The median is a few milliseconds, but p99 is over a second. That is the
+planted 1.5 second stall: during it, requests kept arriving on schedule and
+waited, and Mantix counted how long each one waited. Many tools would have
+reported a healthy p99 here. [Reading results
+honestly](/concepts/results/) explains the difference.
+
+### Exit codes
+
+`mantix run` is made for CI. It exits with:
+
+| Code | Meaning                                                  |
+| ---- | -------------------------------------------------------- |
+| `0`  | The run finished and every threshold passed.             |
+| `99` | At least one threshold failed (the same code as k6).     |
+| `1`  | Something went wrong: a bad file, a bad option, a crash. |
+
+### Change the load without editing the file
+
+Flags override the file's load model for one run:
+
+```sh
+# Twice the rate, for a minute
+pnpm mantix run examples/quick.ts --rate 100 --duration 1m
+
+# 20 virtual users looping instead of a fixed rate
+pnpm mantix run examples/quick.ts --vus 20
+```
+
+See the [CLI reference](/reference/cli/) for every flag.
+
+## 4. Watch it live
+
+Now run the same file in the dashboard:
+
+```sh
+pnpm mantix ui examples/quick.ts
+```
+
+Open [http://localhost:4100](http://localhost:4100), press **Start**, and
+watch the run build up second by second. Press **Stop** whenever you like.
+[Reading the dashboard](/start/dashboard/) walks through each part.
+
+## 5. Write your own
+
+Test files live in the `examples/` folder, which is set up so that
+`import … from 'mantix'` resolves. Copy `quick.ts` to a new file and change
+the journey. The next page to read is [Writing tests](/guides/writing-tests/);
+`examples/checkout.ts` is a fuller example that adds to a cart and checks
+out.

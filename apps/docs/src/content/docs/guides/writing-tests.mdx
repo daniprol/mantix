@@ -1,0 +1,240 @@
+---
+title: Writing tests
+description: Scenarios, the iteration context, and how to make requests with Mantix's http client.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+A Mantix test is a TypeScript file whose default export is a **scenario**: a
+name, a load model, and an `iteration` function that describes one user's
+journey. Mantix calls `iteration` over and over, as often as the load model
+says.
+
+## A scenario
+
+```ts title="examples/checkout.ts"
+import { rate, scenario } from 'mantix'
+
+export default scenario({
+  name: 'checkout',
+  baseUrl: 'http://localhost:4200',
+  load: rate.constant(20, { duration: '1m' }),
+  thresholds: ['p99 < 250ms', 'errors < 1%'],
+  headers: { 'x-test-run': 'mantix' },
+  timeout: '5s',
+  iteration: async ({ http, vu }) => {
+    const cartId = `cart-${vu}`
+    await http.post('/cart/items', { json: { cartId, sku: 'A1', qty: 1 } })
+    await http.post('/checkout', { json: { cartId } })
+  },
+})
+```
+
+The options:
+
+| Option       | Required | What it does                                                                |
+| ------------ | -------- | --------------------------------------------------------------------------- |
+| `name`       | yes      | How the scenario appears in results.                                        |
+| `load`       | yes      | How much traffic to generate. See [Load models](/concepts/load-models/).    |
+| `iteration`  | yes      | One user's journey: an `async` function, called many times.                 |
+| `baseUrl`    |          | Put in front of every path that doesn't start with `http://` or `https://`. |
+| `thresholds` |          | Pass/fail rules. See [Thresholds](/guides/thresholds/).                     |
+| `headers`    |          | Headers sent with every request.                                            |
+| `timeout`    |          | Default request timeout. Default `'10s'`.                                   |
+| `setup`      |          | Runs once before the load starts. See [Setup](/guides/setup-and-mixes/).    |
+| `teardown`   |          | Runs once after the load stops.                                             |
+| `startAfter` |          | Wait this long before this scenario begins.                                 |
+
+Durations are either a number of seconds (`30`) or text: `'500ms'`, `'30s'`,
+`'2m'`, `'1h'`.
+
+## The iteration context
+
+`iteration` receives one object. Take what you need from it:
+
+```ts
+iteration: async ({ http, data, vu, iteration, signal }) => {
+  // …
+}
+```
+
+| Field       | What it is                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------------- |
+| `http`      | The HTTP client. Every request made through it is timed and recorded.                                          |
+| `data`      | Whatever `setup` returned, or `undefined` if there is no `setup`.                                              |
+| `vu`        | The virtual user running this iteration, counting from 1.                                                      |
+| `iteration` | How many iterations this virtual user has started, counting from 1.                                            |
+| `signal`    | An `AbortSignal` that fires when the run stops. Mantix's `http` uses it already; pass it to any other library. |
+
+A **virtual user** (VU) is one slot that runs one iteration at a time. With a
+rate model, `vu` is the number of the slot that picked up this iteration,
+from 1 up to `maxVus`; with a VU model it is the user's own number, from 1
+to the user count. Either way it is handy for giving each user its own
+cart, account or session:
+
+```ts
+iteration: async ({ http, vu }) => {
+  await http.get('/cart/:id', { params: { id: `cart-${vu}` } })
+}
+```
+
+## Making requests
+
+`http` has a method per HTTP verb, plus a general `request`:
+
+```ts
+await http.get(path, options)
+await http.post(path, options)
+await http.put(path, options)
+await http.patch(path, options)
+await http.delete(path, options)
+await http.request('HEAD', path, options)
+```
+
+Each returns a promise of the response:
+
+```ts
+const response = await http.get('/products/:sku', { params: { sku: 'A1' } })
+
+response.status // 200
+response.headers // { 'content-type': 'application/json', … }
+response.body // the parsed JSON, or the text when it isn't JSON
+response.text // the raw body text
+```
+
+### Paths, params and endpoint names
+
+Write paths as **route templates** and fill in the variable parts with
+`params`:
+
+```ts
+await http.get('/products/:sku', { params: { sku: 'A1' } })
+await http.get('/orders/:id/items/:item', { params: { id: 42, item: 3 } })
+```
+
+This matters for results. Mantix groups requests by endpoint name, and the
+name keeps the template. A thousand different products all count under one
+row, `GET /products/:sku`, instead of a thousand rows of one request each.
+
+<Aside type="tip">
+  If you build the path yourself (`` `/products/${sku}` ``), every product
+  becomes its own endpoint. Use `params`, or set `name` to group them.
+</Aside>
+
+To choose a different name, pass `name`:
+
+```ts
+await http.get('/search', { query: { q: 'shoes' }, name: 'search' })
+```
+
+### Query strings
+
+```ts
+await http.get('/products', { query: { page: 2, inStock: true } })
+// GET /products?page=2&inStock=true
+```
+
+### Bodies
+
+Send JSON with `json`. It is serialised for you and `content-type` is set to
+`application/json`:
+
+```ts
+await http.post('/cart/items', { json: { cartId: 'c1', sku: 'A1', qty: 1 } })
+```
+
+For anything else, pass a string or bytes as `body` and set the header:
+
+```ts
+await http.post('/upload', {
+  body: 'name,qty\nA1,3',
+  headers: { 'content-type': 'text/csv' },
+})
+```
+
+### Headers and timeouts
+
+`headers` on a request add to (and override) the scenario's `headers`.
+`timeout` overrides the scenario's default for this request only:
+
+```ts
+await http.post('/checkout', {
+  json: { cartId },
+  headers: { authorization: `Bearer ${token}` },
+  timeout: '2s',
+})
+```
+
+### Validating the body
+
+Pass a schema as `expect` and Mantix checks every response body against it.
+This gets its own page: [Validating responses](/guides/validation/).
+
+## When a request fails
+
+A request **fails** when:
+
+- the connection fails (`Transport`),
+- no answer arrives within `timeout` (`Timeout`),
+- the status is outside `okStatus`, which by default accepts 200 to 399
+  (`HttpStatus`),
+- or the body does not match `expect` (`SchemaMismatch`).
+
+Mantix records the failure once, then the promise rejects with a
+`RequestFailed` error. Because you `await` it, the rest of the iteration is
+skipped: a user who could not add to their cart does not go on to check out.
+That is usually what you want.
+
+To carry on anyway, catch it:
+
+```ts
+import { RequestFailed } from 'mantix'
+
+iteration: async ({ http }) => {
+  try {
+    await http.get('/recommendations')
+  } catch (error) {
+    // Already recorded as a failure. Ignore it and keep going.
+    if (!(error instanceof RequestFailed)) throw error
+  }
+  await http.get('/products/:sku', { params: { sku: 'A1' } })
+}
+```
+
+`RequestFailed` has `kind` (one of the four above), `endpoint` and `status`
+(when there was one).
+
+To treat some non-2xx statuses as success, pass `okStatus`:
+
+```ts
+// A 404 is the expected answer for an unknown product.
+await http.get('/products/:sku', {
+  params: { sku: 'NOPE' },
+  okStatus: status => status === 200 || status === 404,
+})
+```
+
+### Errors in your own code
+
+If your own code throws (a typo, reading a property of `undefined`), Mantix
+records a **`ScriptError`**. It is kept apart from server errors and never
+counted against your `errors` thresholds: a bug in the test must never look
+like a bug in the server. It still ends that iteration, and it shows up in
+the results so you can fix it.
+
+## Calling other libraries
+
+Tests are ordinary TypeScript running on Node, so you can import anything:
+your application's API client, a database driver, a fake-data library.
+Requests made outside `http` are not timed or recorded, so use `http` for
+the traffic you want to measure.
+
+If a library accepts an `AbortSignal`, pass it `signal`, so that stopping the
+run stops it too:
+
+```ts
+iteration: async ({ http, signal }) => {
+  const token = await fetchTokenFromIdp({ signal })
+  await http.get('/me', { headers: { authorization: `Bearer ${token}` } })
+}
+```
