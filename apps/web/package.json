@@ -1,0 +1,36 @@
+{
+  "name": "@mantix/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Mantix dashboard, a Foldkit app",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "mock": "node mock/server.ts",
+    "typecheck": "effect-tsgo tsc --noEmit -p . && effect-tsgo tsc --noEmit -p mock"
+  },
+  "dependencies": {
+    "@effect/platform-browser": "catalog:",
+    "@foldkit/ui": "catalog:",
+    "@fontsource-variable/geist": "catalog:",
+    "@fontsource-variable/geist-mono": "catalog:",
+    "@mantix/api": "workspace:*",
+    "effect": "catalog:",
+    "foldkit": "catalog:",
+    "uplot": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@foldkit/devtools": "catalog:",
+    "@foldkit/oxlint-plugin": "catalog:",
+    "@foldkit/vite-plugin": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
+    "happy-dom": "catalog:",
+    "tailwindcss": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -24,6 +24,30 @@ export default scenario({
 > Work in progress: the first working version is being built through pull
 > requests.
 
+## Try it
+
+The repo ships a small demo shop with a few planted bugs (a checkout that
+stalls every 30 seconds, occasional 503s, and a price that sometimes comes
+back as a string). Start it in one terminal:
+
+```sh
+pnpm install
+pnpm --filter @mantix/demo-target start    # http://localhost:4200
+```
+
+Then, in another terminal, either run a test from the command line:
+
+```sh
+pnpm mantix run examples/checkout.ts
+```
+
+or open the live dashboard and start runs from the browser:
+
+```sh
+pnpm --filter @mantix/web build            # build the dashboard once
+pnpm mantix ui examples/checkout.ts        # http://localhost:4100
+```
+
 ## Developing
 
 You need Node 22.19 or newer (the repo pins 24 in `.node-version`) and

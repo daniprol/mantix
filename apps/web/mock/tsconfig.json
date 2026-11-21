@@ -1,0 +1,18 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": { "schemaClassMissingBrand": "off" },
+        "allowedUnstableApis": [
+          "effect/http-api",
+          "effect/http",
+          "@effect/platform-node"
+        ]
+      }
+    ]
+  },
+  "include": ["."]
+}
