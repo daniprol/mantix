@@ -4,7 +4,7 @@
  * Node only. The browser must never import this package; it talks to the
  * engine through @mantix/api.
  */
-export { type DurationInput, toSeconds } from './Duration.ts'
+export { type DurationInput, parseDuration, toSeconds } from './Duration.ts'
 export {
   type LoadModel,
   planDuration,
@@ -43,3 +43,12 @@ export {
   type Threshold,
   type ThresholdInput,
 } from './Thresholds.ts'
+export {
+  applyOverrides,
+  InvalidTest,
+  type RunHandle,
+  type RunOptions,
+  type RunResult,
+  startRun,
+  testInfo,
+} from './Runner.ts'

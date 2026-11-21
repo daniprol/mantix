@@ -23,3 +23,9 @@ export const toSeconds = (input: DurationInput): number => {
   const [, amount, unit] = match
   return Number(amount) * UNIT_SECONDS[unit as keyof typeof UNIT_SECONDS]
 }
+
+/** Read a duration typed on the command line: "30s", "2m" or "45". */
+export const parseDuration = (text: string): number =>
+  /^\s*\d+(?:\.\d+)?\s*$/.test(text)
+    ? Number(text)
+    : toSeconds(text as DurationInput)

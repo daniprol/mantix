@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@mantix/api": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "undici": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
