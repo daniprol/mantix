@@ -1,0 +1,88 @@
+---
+title: What is Mantix?
+description: A load-testing tool for TypeScript developers that measures latency honestly and shows a run as it happens.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+Mantix is a load-testing tool. You describe what one user does, as a small
+TypeScript file, and Mantix runs that journey many times a second against
+your server. While it runs, you watch latency, throughput and errors in a
+live dashboard or in your terminal. At the end, it tells you whether the
+server met the limits you set.
+
+If you have used [Locust](https://locust.io) or [k6](https://k6.io), the
+ideas will feel familiar. Mantix borrows Locust's friendliness and k6's
+command line, and adds a few things neither does by default.
+
+<Aside type="caution" title="Pre-release">
+  Mantix is a work in progress and is not published to npm yet. To try it today,
+  you run it from a clone of the repository. The [quick
+  start](/start/quick-start/) shows how. Names and output may still change
+  before the first release.
+</Aside>
+
+## What it looks like
+
+A test is a TypeScript file with a default export:
+
+```ts title="examples/quick.ts"
+import { rate, scenario } from 'mantix'
+
+export default scenario({
+  name: 'browse',
+  baseUrl: 'http://localhost:4200',
+  load: rate.constant(50, { duration: '30s' }),
+  thresholds: ['p99 < 250ms', 'errors < 1%'],
+  iteration: async ({ http }) => {
+    await http.get('/products/:sku', { params: { sku: 'A1' } })
+  },
+})
+```
+
+Read it from top to bottom:
+
+- **`name`** is how this scenario appears in results.
+- **`load`** says how much traffic to send. Here: start 50 iterations every
+  second, for 30 seconds.
+- **`thresholds`** are your pass/fail rules: 99% of requests faster than
+  250 ms, and fewer than 1% failing.
+- **`iteration`** is one user's journey. Mantix calls it again and again.
+
+That is the whole shape. Everything else in these docs adds detail to one of
+those four keys.
+
+## What makes it different
+
+**It is just TypeScript.** Tests run on Node, so you can import any npm
+package and your own application's code: the same Zod schemas, the same
+API client, the same fixtures.
+
+**It tells the statistical truth by default.** Most tools wait for a slow
+response before sending the next request, which quietly hides how slow the
+server was. Mantix keeps sending on schedule and measures each request
+from when it _should_ have started. It never averages percentiles. The
+[Reading results honestly](/concepts/results/) page explains why that
+matters.
+
+**You can watch a run happen.** `mantix ui` opens a local dashboard with a
+latency heatmap, target against achieved throughput, and errors by kind,
+one column per second.
+
+**Effect is optional.** Mantix is built on [Effect](https://effect.website),
+a TypeScript library for reliable concurrent programs. You do not need to
+know it. Tests are plain `async` functions. If you already use Effect,
+there is an [Effect flavour](/guides/effect/) of the same API that adds
+typed errors, retries and clean cancellation.
+
+## Where it can't win
+
+Raw requests per second on one CPU core. Tools written in Go or Rust can
+push several times more load from the same machine. Mantix is for testing
+real user journeys with real assertions, at the rates most services see in
+staging, and for reading the results carefully.
+
+## Next
+
+Head to the [quick start](/start/quick-start/) to run your first test
+against the demo server that ships in the repository.

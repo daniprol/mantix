@@ -1,0 +1,29 @@
+---
+/**
+ * One landing-page section: a hairline, a mono eyebrow, a heading and some
+ * copy on the left, and whatever is in the `aside` slot on the right
+ * (usually a code block). Without an aside it spans the full width.
+ */
+interface Props {
+  eyebrow: string
+  title: string
+}
+const { eyebrow, title } = Astro.props
+const split = Astro.slots.has('aside')
+const solo = !Astro.slots.has('default')
+---
+
+<section class:list={['mx-section', 'not-content', { split, solo }]}>
+  <div class="copy">
+    <p class="eyebrow">{eyebrow}</p>
+    <h2>{title}</h2>
+    <slot />
+  </div>
+  {
+    split && (
+      <div class="aside">
+        <slot name="aside" />
+      </div>
+    )
+  }
+</section>

@@ -1,0 +1,61 @@
+---
+/**
+ * Override of Starlight's Pagination: previous and next as two plain text
+ * links under a hairline, instead of two bordered cards with shadows.
+ */
+const { dir, pagination } = Astro.locals.starlightRoute
+const { prev, next } = pagination
+---
+
+<nav class="pagination print:hidden" dir={dir} aria-label="Pagination">
+  {
+    prev ? (
+      <a href={prev.href} rel="prev">
+        <span class="hint">← {Astro.locals.t('page.previousLink')}</span>
+        <span class="title">{prev.label}</span>
+      </a>
+    ) : (
+      <span />
+    )
+  }
+  {
+    next && (
+      <a href={next.href} rel="next">
+        <span class="hint">{Astro.locals.t('page.nextLink')} →</span>
+        <span class="title">{next.label}</span>
+      </a>
+    )
+  }
+</nav>
+
+<style>
+  .pagination {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--mx-hairline);
+  }
+  a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    text-decoration: none;
+  }
+  [rel='next'] {
+    text-align: end;
+    grid-column: 2;
+  }
+  .hint {
+    font-size: 0.75rem;
+    color: var(--mx-ink-3);
+  }
+  .title {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--mx-ink);
+  }
+  a:hover .title {
+    color: var(--mx-accent-ink);
+  }
+</style>

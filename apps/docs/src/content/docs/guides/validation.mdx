@@ -1,0 +1,151 @@
+---
+title: Validating responses
+description: Check response bodies with Zod, Valibot, Effect Schema or any Standard Schema library, and catch the bugs that still return 200.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components'
+
+A server can answer `200 OK` and still be wrong: a missing field, a price
+sent as a string, an empty list where there should be items. Under load,
+these bugs often show up only for a small share of requests, which is
+exactly when nobody is reading the bodies.
+
+Pass a schema as `expect` and Mantix checks every response body against it.
+
+## Any Standard Schema library
+
+`expect` accepts any library that implements
+[Standard Schema](https://standardschema.dev): Zod, Valibot, ArkType, Effect
+Schema and others. Use the one your application already has; if your API
+types are already described as schemas, import them straight into the test.
+
+<Tabs syncKey="schema-lib">
+<TabItem label="Zod">
+
+```ts
+import { rate, scenario } from 'mantix'
+import { z } from 'zod'
+
+const Cart = z.object({
+  id: z.string(),
+  items: z.array(
+    z.object({ sku: z.string(), qty: z.number(), price: z.number() }),
+  ),
+})
+
+export default scenario({
+  name: 'cart',
+  baseUrl: 'http://localhost:4200',
+  load: rate.constant(20, { duration: '1m' }),
+  iteration: async ({ http, vu }) => {
+    const cart = await http.get('/cart/:id', {
+      params: { id: `cart-${vu}` },
+      expect: Cart,
+    })
+    cart.body.items // typed from the schema
+  },
+})
+```
+
+</TabItem>
+<TabItem label="Valibot">
+
+```ts
+import { rate, scenario } from 'mantix'
+import * as v from 'valibot'
+
+const Cart = v.object({
+  id: v.string(),
+  items: v.array(
+    v.object({ sku: v.string(), qty: v.number(), price: v.number() }),
+  ),
+})
+
+export default scenario({
+  name: 'cart',
+  baseUrl: 'http://localhost:4200',
+  load: rate.constant(20, { duration: '1m' }),
+  iteration: async ({ http, vu }) => {
+    const cart = await http.get('/cart/:id', {
+      params: { id: `cart-${vu}` },
+      expect: Cart,
+    })
+    cart.body.items // typed from the schema
+  },
+})
+```
+
+</TabItem>
+<TabItem label="Effect Schema">
+
+```ts
+import { Schema } from 'effect'
+import { rate, scenario } from 'mantix'
+
+const Cart = Schema.Struct({
+  id: Schema.String,
+  items: Schema.Array(
+    Schema.Struct({
+      sku: Schema.String,
+      qty: Schema.Finite,
+      price: Schema.Finite,
+    }),
+  ),
+})
+
+export default scenario({
+  name: 'cart',
+  baseUrl: 'http://localhost:4200',
+  load: rate.constant(20, { duration: '1m' }),
+  iteration: async ({ http, vu }) => {
+    const cart = await http.get('/cart/:id', {
+      params: { id: `cart-${vu}` },
+      // Effect Schema implements Standard Schema through this helper.
+      expect: Schema.toStandardSchemaV1(Cart),
+    })
+    cart.body.items // typed from the schema
+  },
+})
+```
+
+You don't need to write the rest of your test with Effect to use Effect
+Schema. It is just another schema library here.
+
+</TabItem>
+</Tabs>
+
+When the body matches, `response.body` is the validated value, and its
+type comes from the schema, so your editor knows `cart.body.items` exists.
+
+## What a mismatch does
+
+A body that doesn't match is recorded as a **`SchemaMismatch`** error, which
+is its own kind, separate from HTTP status errors. In the dashboard and the
+final table you see it apart from `503`s and timeouts, so "the server is
+down" and "the server sends the wrong shape" never blur together.
+
+Like any failed request, the promise rejects with `RequestFailed` (here with
+`kind: 'SchemaMismatch'`) and the iteration ends. Catch it if the journey
+should continue; see [When a request
+fails](/guides/writing-tests/#when-a-request-fails).
+
+The demo target sends `price` as a string in about 1% of cart responses.
+Run `examples/checkout.ts` against it and you will see a steady trickle of
+`SchemaMismatch` errors on `GET /cart/:id`, with a perfect 0% of HTTP errors
+on the same endpoint.
+
+## Validating a sample
+
+Validation runs on the load generator, and for large bodies at high rates it
+costs real CPU. Set `validateSample` to check only a share of responses,
+from `0` to `1`:
+
+```ts
+await http.get('/catalog', {
+  expect: Catalog,
+  validateSample: 0.05, // check 1 response in 20
+})
+```
+
+The default is `1`: every response is checked. At 5%, a bug that hits 1% of
+responses still shows up within seconds at any useful rate.

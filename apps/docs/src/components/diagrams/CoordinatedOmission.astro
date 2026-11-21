@@ -1,0 +1,106 @@
+---
+/**
+ * Coordinated omission, drawn at build time.
+ *
+ * Requests are scheduled every 20px. The server stalls between STALL_FROM
+ * and STALL_TO. Top lane: a closed-loop tool sends one request, waits out
+ * the stall, and records a single slow sample. Bottom lane: Mantix keeps the
+ * schedule, and every request that should have gone out during the stall is
+ * recorded as late, by exactly how late it was (from its intended start).
+ */
+const X0 = 20
+const X1 = 660
+const STEP = 20
+const STALL_FROM = 240
+const STALL_TO = 420
+const FAST = 8
+
+const schedule: Array<number> = []
+for (let x = X0; x <= X1 - FAST; x += STEP) schedule.push(x)
+
+/** When a request sent at x would complete. */
+const done = (x: number) =>
+  x + FAST > STALL_FROM && x < STALL_TO ? STALL_TO + 2 : x + FAST
+
+// Closed: send, wait for the answer, then send the next scheduled one.
+const closed: Array<{ x: number; w: number }> = []
+let free = X0
+for (const x of schedule) {
+  if (x < free) continue // a scheduled send that never happened
+  const end = done(x)
+  closed.push({ x, w: end - x })
+  free = end
+}
+const skipped = schedule.filter(
+  x => x > STALL_FROM && x < STALL_TO && !closed.some(c => c.x === x),
+)
+
+// Open (Mantix): every scheduled request happens; latency from intended start.
+// The slow ones are drawn as a staircase, one row each, so none overlap.
+let slowRow = 0
+const open = schedule.map(x => {
+  const w = done(x) - x
+  return { x, w, row: w > 20 ? slowRow++ : 0 }
+})
+
+const T1 = 40
+const T2 = 130
+---
+
+<figure class="mx-diagram not-content">
+  <svg viewBox="0 0 680 240" role="img" aria-labelledby="co-title">
+    <title id="co-title">
+      A closed-loop tool records one slow request during a stall and skips
+      the rest. Mantix records every scheduled request as late by how long it
+      waited.
+    </title>
+    <rect
+      class="stall"
+      x={STALL_FROM}
+      y="20"
+      width={STALL_TO - STALL_FROM}
+      height="200"
+    />
+    <text class="small" x={(STALL_FROM + STALL_TO) / 2} y="12" text-anchor="middle">
+      server stalls
+    </text>
+
+    <text class="label" x={X0} y={T1 - 12}>Closed loop</text>
+    {
+      closed.map(c => (
+        <rect class={c.w > 20 ? 'danger' : 'bar'} x={c.x} y={T1} width={c.w} height="8" />
+      ))
+    }
+    {
+      skipped.map(x => (
+        <rect class="dashed axis" x={x} y={T1 + 13} width={FAST} height="8" />
+      ))
+    }
+    <text class="small" x={X0} y={T1 + 40}>
+      1 slow sample recorded; the dashed requests should have gone out but were never sent
+    </text>
+
+    <line class="rule" x1={X0} x2={X1} y1="98" y2="98" />
+
+    <text class="label" x={X0} y={T2 - 12}>Mantix (open, corrected)</text>
+    {
+      open.map(o => (
+        <rect
+          class={o.w > 20 ? 'danger' : 'bar'}
+          x={o.x}
+          y={T2 + o.row * 8}
+          width={o.w}
+          height="6"
+        />
+      ))
+    }
+    <text class="small" x={X0} y={T2 + 90}>
+      every scheduled request is counted, each as late as it really was
+    </text>
+  </svg>
+  <figcaption>
+    Bars run from when a request should have started to when its answer
+    arrived. Red bars are the slow ones. The closed-loop tool reports one;
+    Mantix reports all nine that users would have felt.
+  </figcaption>
+</figure>

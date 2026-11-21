@@ -1,0 +1,181 @@
+---
+title: Scenario API
+description: Everything a test file can import from 'mantix', with every option.
+---
+
+Everything a test file needs comes from one import:
+
+```ts
+import { rate, RequestFailed, scenario, vus, weighted } from 'mantix'
+import type {
+  DurationInput,
+  Http,
+  HttpResponse,
+  IterationContext,
+  RequestOptions,
+} from 'mantix'
+```
+
+| Export                       | Kind     | Section                                 |
+| ---------------------------- | -------- | --------------------------------------- |
+| `scenario`                   | function | [scenario()](#scenario)                 |
+| `scenario.effect`            | function | [scenario.effect()](#scenarioeffect)    |
+| `weighted`                   | function | [weighted()](#weighted)                 |
+| `rate`, `vus`                | objects  | [Load models](#load-models)             |
+| `RequestFailed`              | class    | [RequestFailed](#requestfailed)         |
+| `Http`, `EffectHttp`         | types    | [The http client](#the-http-client)     |
+| `RequestOptions`             | type     | [Request options](#request-options)     |
+| `HttpResponse`               | type     | [HttpResponse](#httpresponse)           |
+| `IterationContext`           | type     | [Iteration context](#iteration-context) |
+| `ThresholdInput`             | type     | [Thresholds](#thresholds)               |
+| `DurationInput`              | type     | [Durations](#durations)                 |
+| `LoadModel`, `Stage`         | types    | [Load models](#load-models)             |
+| `Scenario`, `TestDefinition` | types    | [Test files](#test-files)               |
+
+## Test files
+
+A test file's default export is a `TestDefinition`: one `Scenario`, or an
+array of them that run together.
+
+```ts
+export default scenario({ … })
+export default [scenario({ … }), scenario({ … })]
+```
+
+## scenario()
+
+```ts
+scenario<Data>(options): Scenario
+```
+
+| Option       | Type                                                       | Default  | Notes                                                             |
+| ------------ | ---------------------------------------------------------- | -------- | ----------------------------------------------------------------- |
+| `name`       | `string`                                                   | required | Shown everywhere in results.                                      |
+| `load`       | `LoadModel`                                                | required | From `rate.*` or `vus.*`.                                         |
+| `iteration`  | `(context: IterationContext<Data, Http>) => Promise<void>` | required | One user's journey.                                               |
+| `baseUrl`    | `string`                                                   |          | Prepended to paths that don't start with `http://` or `https://`. |
+| `thresholds` | `ThresholdInput[]`                                         |          | Pass/fail rules.                                                  |
+| `headers`    | `Record<string, string>`                                   |          | Sent with every request.                                          |
+| `timeout`    | `DurationInput`                                            | `'10s'`  | Default request timeout.                                          |
+| `startAfter` | `DurationInput`                                            | `0`      | Delay from the start of the run before this scenario begins.      |
+| `setup`      | `(context: { http, signal }) => Promise<Data>`             |          | Runs once before the load. Its result is `data`.                  |
+| `teardown`   | `(context: { http, signal, data }) => Promise<void>`       |          | Runs once after the load, even when stopped early.                |
+
+## scenario.effect()
+
+```ts
+scenario.effect<Data, E>(options): Scenario
+```
+
+The same options as `scenario()`, except that `iteration`, `setup` and
+`teardown` return an `Effect` instead of a `Promise`, and `http` is an
+`EffectHttp`. See [Effect scenarios](/guides/effect/).
+
+## Iteration context
+
+What `iteration` receives:
+
+| Field       | Type          | Notes                                                                           |
+| ----------- | ------------- | ------------------------------------------------------------------------------- |
+| `http`      | `Http`        | The HTTP client.                                                                |
+| `data`      | `Data`        | What `setup` returned, else `undefined`.                                        |
+| `vu`        | `number`      | The virtual user running this iteration, from 1.                                |
+| `iteration` | `number`      | How many iterations this virtual user has started, from 1.                      |
+| `signal`    | `AbortSignal` | Aborted when the run stops. `http` uses it already; pass it to other libraries. |
+
+`setup` and `teardown` receive `http` and `signal`; `teardown` also gets
+`data`.
+
+## The http client
+
+| Method                                 | Returns                       |
+| -------------------------------------- | ----------------------------- |
+| `http.get(path, options?)`             | `Promise<HttpResponse<Body>>` |
+| `http.post(path, options?)`            | `Promise<HttpResponse<Body>>` |
+| `http.put(path, options?)`             | `Promise<HttpResponse<Body>>` |
+| `http.patch(path, options?)`           | `Promise<HttpResponse<Body>>` |
+| `http.delete(path, options?)`          | `Promise<HttpResponse<Body>>` |
+| `http.request(method, path, options?)` | `Promise<HttpResponse<Body>>` |
+
+In Effect scenarios the same methods return
+`Effect<HttpResponse<Body>, RequestFailed>`.
+
+A failed request (transport error, timeout, a status outside `okStatus`, or a
+schema mismatch) is recorded once and rejects with `RequestFailed`.
+
+## Request options
+
+| Option           | Type                                          | Default           | Notes                                                                    |
+| ---------------- | --------------------------------------------- | ----------------- | ------------------------------------------------------------------------ |
+| `params`         | `Record<string, string \| number>`            |                   | Fills `:name` placeholders. The endpoint keeps the template as its name. |
+| `query`          | `Record<string, string \| number \| boolean>` |                   | Query string values.                                                     |
+| `headers`        | `Record<string, string>`                      |                   | Request headers.                                                         |
+| `json`           | `unknown`                                     |                   | A JSON body. Sets `content-type: application/json`.                      |
+| `body`           | `string \| Uint8Array`                        |                   | A raw body.                                                              |
+| `name`           | `string`                                      | method + template | The endpoint name in results.                                            |
+| `expect`         | Standard Schema                               |                   | Validates the JSON body. A mismatch is a `SchemaMismatch`.               |
+| `validateSample` | `number` (0 to 1)                             | `1`               | Share of responses to validate.                                          |
+| `okStatus`       | `(status: number) => boolean`                 | 200 to 399        | Which statuses count as success.                                         |
+| `timeout`        | `DurationInput`                               | the scenario's    | Gives up and records a `Timeout`.                                        |
+
+## HttpResponse
+
+| Field     | Type                     | Notes                                                           |
+| --------- | ------------------------ | --------------------------------------------------------------- |
+| `status`  | `number`                 |                                                                 |
+| `headers` | `Record<string, string>` |                                                                 |
+| `body`    | `Body`                   | Parsed JSON (validated when `expect` was given), else the text. |
+| `text`    | `string`                 | The raw body text.                                              |
+
+## RequestFailed
+
+An `Error` subclass with `_tag: 'RequestFailed'`.
+
+| Field      | Type                                                           |
+| ---------- | -------------------------------------------------------------- |
+| `kind`     | `'Transport' \| 'Timeout' \| 'HttpStatus' \| 'SchemaMismatch'` |
+| `endpoint` | `string`                                                       |
+| `status`   | `number \| undefined`                                          |
+| `message`  | `string`                                                       |
+
+## weighted()
+
+```ts
+weighted([[weight, run], …]): (context) => Promise<void>
+```
+
+Returns an iteration that picks one `run` at random per call, in proportion
+to its `weight`. Throws if the list is empty or the weights add up to 0. See
+[A mix of journeys](/guides/setup-and-mixes/#a-mix-of-journeys-with-weighted).
+
+## Load models
+
+| Function                                          | Model  | Notes                      |
+| ------------------------------------------------- | ------ | -------------------------- |
+| `rate.constant(perSecond, { duration, maxVus? })` | Open   | `maxVus` defaults to 1000. |
+| `rate.ramping({ start?, stages, maxVus? })`       | Open   | `start` defaults to 0.     |
+| `vus.constant(count, { duration })`               | Closed |                            |
+| `vus.ramping({ start?, stages })`                 | Closed | `start` defaults to 0.     |
+
+A `Stage` is `{ duration: DurationInput, target: number }`. Each stage moves
+in a straight line from the previous target to its own. See [Load
+models](/concepts/load-models/).
+
+## Thresholds
+
+A `ThresholdInput` is a string such as `'p99 < 250ms'`, or an object:
+
+| Field         | Type      | Notes                                           |
+| ------------- | --------- | ----------------------------------------------- |
+| `check`       | `string`  | The expression.                                 |
+| `endpoint`    | `string`  | Limit to one endpoint, e.g. `'POST /checkout'`. |
+| `abortOnFail` | `boolean` | Stop the run as soon as this fails.             |
+
+Metrics: `p50`, `p90`, `p95`, `p99`, `max` (units `ms` or `s`), `errors`
+(in `%`), `rps`. Operators: `<`, `<=`, `>`, `>=`. See
+[Thresholds](/guides/thresholds/).
+
+## Durations
+
+A `DurationInput` is a number of seconds, or a string with a unit: `'500ms'`,
+`'30s'`, `'2m'`, `'1h'`.

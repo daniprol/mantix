@@ -1,0 +1,138 @@
+---
+/**
+ * Open versus closed load models, drawn at build time.
+ *
+ * Both lanes share one time axis and one "server slows down" window. In the
+ * open lane, iterations keep arriving on schedule (the ticks), so slow ones
+ * overlap and concurrency grows. In the closed lane, three VUs loop back to
+ * back, so when iterations get slow, fewer of them start.
+ *
+ * Colours come from CSS classes in theme.css (.bar, .accent, .shade...), so
+ * the diagram follows the light and dark themes.
+ */
+const X0 = 90
+const X1 = 660
+const SLOW_FROM = 300
+const SLOW_TO = 420
+const BAR = 7
+
+/** How long an iteration takes if it starts at x: slow inside the window. */
+const duration = (start: number) =>
+  start >= SLOW_FROM - 20 && start < SLOW_TO ? 92 : 22
+
+// Open lane: one arrival every 30px, stacked into rows so bars don't overlap.
+const openTop = 40
+const rowEnds: Array<number> = []
+const open = []
+for (let start = X0; start <= X1 - 20; start += 30) {
+  const width = duration(start)
+  let row = rowEnds.findIndex(end => end <= start - 3)
+  if (row === -1) {
+    row = rowEnds.length
+    rowEnds.push(0)
+  }
+  rowEnds[row] = start + width
+  open.push({ start, width, y: openTop + row * 11 })
+}
+const openBottom = openTop + rowEnds.length * 11
+
+// Closed lane: three VUs, each starting its next iteration when one ends.
+const closedTop = openBottom + 44
+const closed = [0, 1, 2].flatMap(vu => {
+  const bars = []
+  let start = X0 + vu * 10
+  while (start < X1 - 10) {
+    const width = Math.min(duration(start), X1 - start)
+    bars.push({ start, width, y: closedTop + vu * 14 })
+    start += width + 8
+  }
+  return bars
+})
+const axisY = closedTop + 3 * 14 + 12
+const height = axisY + 26
+const slow = (width: number) => width > 30
+---
+
+<figure class="mx-diagram not-content">
+  <svg viewBox={`0 0 680 ${height}`} role="img" aria-labelledby="lm-title">
+    <title id="lm-title">
+      Open model: iterations keep arriving on schedule while the server is
+      slow, so more run at once. Closed model: three users loop, and start
+      fewer iterations while the server is slow.
+    </title>
+    <rect
+      class="shade"
+      x={SLOW_FROM}
+      y="22"
+      width={SLOW_TO - SLOW_FROM}
+      height={axisY - 22}
+    />
+    <text class="small" x={(SLOW_FROM + SLOW_TO) / 2} y="14" text-anchor="middle">
+      server slows down
+    </text>
+
+    <text class="label" x="0" y={openTop + 6}>Open</text>
+    <text class="small mono" x="0" y={openTop + 21}>rate.*</text>
+    {
+      open.map(bar => (
+        <>
+          <line
+            class="axis"
+            x1={bar.start}
+            x2={bar.start}
+            y1={openTop - 9}
+            y2={openTop - 3}
+          />
+          <rect
+            class={slow(bar.width) ? 'accent' : 'bar'}
+            x={bar.start}
+            y={bar.y}
+            width={bar.width}
+            height={BAR}
+          />
+        </>
+      ))
+    }
+    <text class="small" x={X1} y={openBottom + 12} text-anchor="end">
+      arrivals keep coming; more run at once
+    </text>
+    <line class="rule" x1="0" x2={X1} y1={openBottom + 24} y2={openBottom + 24} />
+
+    <text class="label" x="0" y={closedTop + 6}>Closed</text>
+    <text class="small mono" x="0" y={closedTop + 21}>vus.*</text>
+    {
+      [0, 1, 2].map(vu => (
+        <text
+          class="small mono"
+          x={X0 - 8}
+          y={closedTop + vu * 14 + 7}
+          text-anchor="end"
+        >
+          {`VU ${vu + 1}`}
+        </text>
+      ))
+    }
+    {
+      closed.map(bar => (
+        <rect
+          class={slow(bar.width) ? 'accent' : 'bar'}
+          x={bar.start}
+          y={bar.y}
+          width={bar.width}
+          height={BAR}
+        />
+      ))
+    }
+
+    <line class="axis" x1={X0} x2={X1} y1={axisY} y2={axisY} />
+    <text class="small" x={X0} y={axisY + 16}>
+      ticks: scheduled arrivals · bars: one iteration each
+    </text>
+    <text class="small" x={X1} y={axisY + 16} text-anchor="end">time →</text>
+  </svg>
+  <figcaption>
+    When the server slows down (amber), the open model keeps sending at the
+    planned rate, the way real users keep arriving. The closed model waits,
+    so it quietly sends less load exactly when the server is struggling.
+  </figcaption>
+</figure>

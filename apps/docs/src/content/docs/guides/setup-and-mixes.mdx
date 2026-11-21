@@ -1,0 +1,151 @@
+---
+title: Setup, mixes and stages
+description: Prepare data before the load starts, mix several journeys by weight, and run more than one scenario at once.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+Real traffic is rarely one request repeated. This page covers the three
+tools for making a test look more like real life: `setup` and `teardown`,
+`weighted()` for a mix of journeys, and several scenarios in one file.
+
+## Setup and teardown
+
+`setup` runs **once**, before any load starts. Whatever it returns is handed
+to every iteration as `data`. Use it to log in, create test accounts, or
+fetch a list of IDs to pick from.
+
+`teardown` runs **once** after the load stops, even when the run was stopped
+early, and receives the same `data`. Use it to clean up.
+
+```ts title="examples/orders.ts"
+import { rate, scenario } from 'mantix'
+
+export default scenario({
+  name: 'orders',
+  baseUrl: 'http://localhost:4200',
+  load: rate.constant(30, { duration: '2m' }),
+
+  setup: async ({ http }) => {
+    const login = await http.post<{ token: string }>('/login', {
+      json: { user: 'load-test', password: process.env.LOAD_TEST_PASSWORD },
+    })
+    return { token: login.body.token, skus: ['A1', 'B2', 'C3'] }
+  },
+
+  iteration: async ({ http, data }) => {
+    const sku = data.skus[Math.floor(Math.random() * data.skus.length)]!
+    await http.get('/products/:sku', {
+      params: { sku },
+      headers: { authorization: `Bearer ${data.token}` },
+    })
+  },
+
+  teardown: async ({ http, data }) => {
+    await http.post('/logout', {
+      headers: { authorization: `Bearer ${data.token}` },
+    })
+  },
+})
+```
+
+`data` is typed from what `setup` returns, so `data.skus` and `data.token`
+autocomplete inside `iteration`.
+
+`setup` and `teardown` receive `http` and `signal`, like an iteration. Their
+requests go through the same client.
+
+<Aside>
+  A test file is a normal module, so values that never change can simply be
+  constants at the top of the file. Use `setup` for anything that needs a
+  request or must be created fresh for each run.
+</Aside>
+
+## A mix of journeys with weighted()
+
+On a shop, most visitors browse, some add to a cart, and few check out.
+`weighted()` picks one journey per iteration at random, in the proportions
+you give, like Locust's weighted tasks:
+
+```ts title="examples/shop.ts"
+import { rate, scenario, weighted } from 'mantix'
+import type { Http } from 'mantix'
+
+type Context = { http: Http; vu: number }
+
+const browse = async ({ http }: Context) => {
+  await http.get('/products/:sku', { params: { sku: 'A1' } })
+}
+
+const addToCart = async ({ http, vu }: Context) => {
+  await http.post('/cart/items', {
+    json: { cartId: `cart-${vu}`, sku: 'A1', qty: 1 },
+  })
+}
+
+const checkout = async ({ http, vu }: Context) => {
+  await http.post('/checkout', { json: { cartId: `cart-${vu}` } })
+}
+
+export default scenario({
+  name: 'shop',
+  baseUrl: 'http://localhost:4200',
+  load: rate.constant(100, { duration: '5m' }),
+  iteration: weighted([
+    [8, browse], // 80% of iterations
+    [2, addToCart], // 20%
+    [1, checkout], // 10%
+  ]),
+})
+```
+
+The weights are relative, so `[8, 2, 1]` means 8 in 11, 2 in 11 and 1 in 11.
+They don't need to add up to anything in particular.
+
+Each journey receives the same context as `iteration`. Declare only the
+fields you use, as `Context` does above.
+
+## Several scenarios in one file
+
+Export an array to run several scenarios side by side. Each has its own
+load model, thresholds and results:
+
+```ts title="examples/mixed.ts"
+import { rate, scenario } from 'mantix'
+
+const shoppers = scenario({
+  name: 'shoppers',
+  baseUrl: 'http://localhost:4200',
+  load: rate.constant(50, { duration: '3m' }),
+  iteration: async ({ http }) => {
+    await http.get('/products/:sku', { params: { sku: 'A1' } })
+  },
+})
+
+const checkoutSpike = scenario({
+  name: 'checkout spike',
+  baseUrl: 'http://localhost:4200',
+  // Join one minute in, while the shoppers keep going.
+  startAfter: '1m',
+  load: rate.ramping({
+    stages: [
+      { duration: '10s', target: 40 },
+      { duration: '30s', target: 40 },
+      { duration: '10s', target: 0 },
+    ],
+  }),
+  thresholds: [{ endpoint: 'POST /checkout', check: 'p99 < 500ms' }],
+  iteration: async ({ http, vu }) => {
+    await http.post('/checkout', { json: { cartId: `cart-${vu}` } })
+  },
+})
+
+export default [shoppers, checkoutSpike]
+```
+
+`startAfter` delays a scenario from the start of the run. It is how you
+build a "background traffic plus a spike" test, or stagger a warm-up.
+
+Scenarios can mix models: here both are open, but one could just as well be
+`vus.constant(…)`. Async and [Effect](/guides/effect/) scenarios can also run
+together in the same file.

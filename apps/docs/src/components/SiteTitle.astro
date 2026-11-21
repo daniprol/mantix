@@ -1,0 +1,49 @@
+---
+/**
+ * Override of Starlight's SiteTitle: the wordmark with the amber "live dot"
+ * (the same dot the dashboard shows while a run is going) and a small
+ * pre-release tag, because Mantix is not on npm yet.
+ */
+const { siteTitleHref } = Astro.locals.starlightRoute
+---
+
+<a href={siteTitleHref} class="site-title" translate="no">
+  <span class="dot" aria-hidden="true"></span>
+  <span class="word">mantix</span>
+  <span class="tag">pre-release</span>
+</a>
+
+<style>
+  .site-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    color: var(--mx-ink);
+    white-space: nowrap;
+  }
+  .dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--mx-accent);
+  }
+  .word {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .tag {
+    font-family: var(--__sl-font-mono);
+    font-size: 0.6875rem;
+    color: var(--mx-ink-3);
+    border: 1px solid var(--mx-hairline);
+    border-radius: 2px;
+    padding: 0.05rem 0.35rem;
+  }
+  @media (max-width: 30rem) {
+    .tag {
+      display: none;
+    }
+  }
+</style>

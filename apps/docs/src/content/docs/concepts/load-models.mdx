@@ -1,0 +1,144 @@
+---
+title: Load models
+description: Open versus closed load, and the four functions that describe how much traffic Mantix generates over time.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+import LoadModels from '../../../components/diagrams/LoadModels.astro'
+
+The `load` option answers one question: how much work should Mantix
+generate, and how should that change over time? There are two families,
+and the difference between them matters more than any other setting.
+
+## Open and closed
+
+**Open** (`rate.*`): iterations **arrive** at a rate, say 50 per second,
+whether or not earlier ones have finished. This is how a public website
+works: new visitors don't wait for other visitors' pages to load before
+they arrive.
+
+**Closed** (`vus.*`): a fixed number of **virtual users** each run the
+iteration, wait for it to finish, and start the next one. The load depends
+on how fast the server answers.
+
+<LoadModels />
+
+The trap with closed load: when the server slows down, a closed test slows
+down with it and sends _less_ traffic, exactly when you want to know what
+happens under pressure. The slow period also produces fewer measurements,
+so it barely moves the percentiles. This is called **coordinated
+omission**, and it is the reason most load tests look better than
+production. [Reading results honestly](/concepts/results/#coordinated-omission)
+goes into detail.
+
+<Aside type="tip" title="Use rate by default">
+  Start with `rate.*` unless you have a reason not to. Use `vus.*` when the real
+  system has a fixed number of clients: a connection pool, a set of workers,
+  WebSocket connections, or "N people clicking as fast as they can".
+</Aside>
+
+## rate.constant
+
+The same arrival rate for the whole run:
+
+```ts
+import { rate } from 'mantix'
+
+load: rate.constant(50, { duration: '2m' }) // 50 iterations per second, for 2 minutes
+```
+
+## rate.ramping
+
+A rate that changes in **stages**. Each stage moves in a straight line from
+the previous target to its own `target` over its `duration`. `start` is the
+rate at time zero (default `0`).
+
+```ts
+load: rate.ramping({
+  start: 0,
+  stages: [
+    { duration: '30s', target: 100 }, // warm up from 0 to 100/s
+    { duration: '5m', target: 100 }, // hold at 100/s
+    { duration: '30s', target: 0 }, // cool down
+  ],
+})
+```
+
+A sudden jump is a zero-length stage, or a very short one:
+
+```ts
+stages: [
+  { duration: '1m', target: 50 },
+  { duration: '1s', target: 200 }, // spike
+  { duration: '30s', target: 200 },
+  { duration: '1s', target: 50 },
+  { duration: '1m', target: 50 },
+]
+```
+
+### maxVus and dropped iterations
+
+In the open model, each arriving iteration is picked up by a free virtual
+user. If the server slows down, iterations take longer, more of them run at
+the same time, and more virtual users are busy. `maxVus` caps how many can
+run at once. The default is `1000`.
+
+When all `maxVus` are busy, a new arrival has nowhere to go. Mantix does
+**not** queue it up to send later (that would bunch requests together and
+distort the results). It counts it as **dropped** and moves on.
+
+```ts
+load: rate.constant(500, { duration: '2m', maxVus: 200 })
+```
+
+Dropped iterations are shown in the results and on the dashboard as the gap
+between target and achieved throughput. A few dropped iterations mean the
+server could not keep up with the rate you asked for: that is a finding, not
+a Mantix error. If you expected the server to cope, look at latency first.
+If the server is fine and you are hitting the cap only because each
+iteration has a long journey, raise `maxVus`.
+
+`maxVus` works the same in `rate.constant` and `rate.ramping`.
+
+## vus.constant
+
+A fixed number of virtual users, each looping over the iteration:
+
+```ts
+import { vus } from 'mantix'
+
+load: vus.constant(20, { duration: '2m' }) // 20 users, for 2 minutes
+```
+
+## vus.ramping
+
+Users that ramp up and down in stages, like Locust's spawn rate. `start` is
+the user count at time zero (default `0`):
+
+```ts
+load: vus.ramping({
+  stages: [
+    { duration: '1m', target: 50 }, // add users until there are 50
+    { duration: '3m', target: 50 },
+    { duration: '30s', target: 0 },
+  ],
+})
+```
+
+## Choosing, in one table
+
+| Model                   | Kind   | Use it for                                                      |
+| ----------------------- | ------ | --------------------------------------------------------------- |
+| `rate.constant(800, …)` | Open   | Anything web-facing. Real users don't wait for your server.     |
+| `rate.ramping({ … })`   | Open   | Warm-up, ramp, soak and cool-down profiles; spikes.             |
+| `vus.constant(50, …)`   | Closed | A fixed set of concurrent clients: pools, WebSockets, browsers. |
+| `vus.ramping({ … })`    | Closed | Locust-style user ramps.                                        |
+
+## Overriding from the command line
+
+`mantix run` can swap the model for one run without editing the file:
+`--rate 100` uses a constant rate of 100/s, `--vus 20` uses 20 constant
+users, and `--duration 2m` sets the length. With only `--duration`, the
+file's own model is stretched or squeezed to fit, so a ramp keeps its
+shape. See the [CLI reference](/reference/cli/).
