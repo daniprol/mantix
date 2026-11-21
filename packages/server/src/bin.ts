@@ -1,3 +1,21 @@
 #!/usr/bin/env node
-// The `mantix` command line. Commands are added in the next pull requests.
-console.log('mantix: commands coming soon (run, ui)')
+import { Effect } from 'effect'
+import { Command } from 'effect/cli'
+
+/**
+ * The `mantix` command line.
+ *
+ * `NodeRuntime.runMain` runs the program as the main fiber. On Ctrl-C it
+ * interrupts that fiber instead of killing the process, so every Scope
+ * closes in order: requests are cancelled, teardown runs, and the summary
+ * is still printed. Exit codes come from the errors (see CliExit).
+ */
+import { NodeRuntime, NodeServices } from '@effect/platform-node'
+
+import { mantix } from './RunCommand.ts'
+
+mantix.pipe(
+  Command.run({ version: '0.0.0' }),
+  Effect.provide(NodeServices.layer),
+  NodeRuntime.runMain,
+)
