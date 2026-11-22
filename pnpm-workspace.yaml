@@ -3,6 +3,7 @@ packages:
   - packages/*
   - apps/*
   - examples
+  - e2e
 
 # One place for shared versions. Packages write "effect": "catalog:".
 # Strict mode refuses versions that are not in the catalog, so nothing drifts.
