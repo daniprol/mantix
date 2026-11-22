@@ -11,6 +11,7 @@ import { styleText } from 'node:util'
 import {
   type GeneratorIssue,
   Histogram,
+  type RunContext,
   type RunInfo,
   type RunSummary,
   type Second,
@@ -106,6 +107,24 @@ const issueLabel = (issue: GeneratorIssue): string =>
     Cpu: 'cpu',
     Gc: 'gc',
   })[issue]
+
+/**
+ * Where a run came from, in a few words for the header, e.g.
+ *   main @ a1b2c3d (dirty) · v2.3 on staging
+ * Only the git state and the label: the rest of the context (project,
+ * machine, version) is saved, but rarely worth a line on screen.
+ */
+export const contextLine = (context: RunContext | undefined): string => {
+  const parts: Array<string> = []
+  const git = context?.git
+  if (git !== undefined) {
+    const commit = git.commit.slice(0, 7)
+    const at = git.branch === undefined ? commit : `${git.branch} @ ${commit}`
+    parts.push(git.dirty ? `${at} (dirty)` : at)
+  }
+  if (context?.label !== undefined) parts.push(context.label)
+  return parts.join(' · ')
+}
 
 /** Pad cells so the columns line up; the first column is left aligned. */
 const table = (rows: ReadonlyArray<ReadonlyArray<string>>): Array<string> => {

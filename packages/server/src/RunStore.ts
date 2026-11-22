@@ -40,10 +40,16 @@ export class HistoryError extends Data.TaggedError('HistoryError')<{
   readonly message: string
 }> {}
 
-/** Filters for `list`. */
+/** Filters for `list`. Every filter given must match. */
 export interface ListOptions {
   /** Only runs of this test file (as stored, relative to the project). */
   readonly file?: string | undefined
+  /** Only runs of this project (see `projectName` in RunContext.ts). */
+  readonly project?: string | undefined
+  /** Only runs made on this git branch. */
+  readonly branch?: string | undefined
+  /** Only runs with exactly this label. */
+  readonly label?: string | undefined
   /** At most this many runs, newest first (default 50). */
   readonly limit?: number | undefined
 }
@@ -170,7 +176,7 @@ export const historyFlags = {
  * Bump this and add a step to `migrate` whenever the tables change. SQLite
  * keeps the number in the file (`PRAGMA user_version`).
  */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const openDatabase = async (path: string): Promise<DatabaseSync> => {
   const { DatabaseSync } = await importSqlite()
@@ -179,7 +185,8 @@ const openDatabase = async (path: string): Promise<DatabaseSync> => {
   // WAL lets the dashboard read while a run writes; foreign keys make
   // deleting a run delete its Seconds too.
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;')
-  migrate(db)
+  // One transaction, so a migration is either done completely or not at all.
+  transaction(db, () => migrate(db))
   markInterruptedRuns(db)
   return db
 }
@@ -239,6 +246,20 @@ const migrate = (db: DatabaseSync): void => {
         data     TEXT NOT NULL,       -- an EndpointSecond merged over the run
         PRIMARY KEY (run_id, endpoint)
       ) WITHOUT ROWID;
+    `)
+  }
+  if (version < 2) {
+    // Version 2: the run context (see RunContext.ts), copied out of the
+    // info JSON so runs can be filtered by it. Runs saved before have no
+    // context, so their new columns stay NULL.
+    db.exec(`
+      ALTER TABLE runs ADD COLUMN project    TEXT;
+      ALTER TABLE runs ADD COLUMN branch     TEXT;
+      ALTER TABLE runs ADD COLUMN commit_sha TEXT;
+      ALTER TABLE runs ADD COLUMN label      TEXT;
+      CREATE INDEX runs_by_project ON runs (project, started_at DESC);
+      CREATE INDEX runs_by_branch ON runs (branch, started_at DESC);
+      CREATE INDEX runs_by_label ON runs (label, started_at DESC);
     `)
   }
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)
@@ -309,8 +330,7 @@ const updateRun = (db: DatabaseSync, info: RunInfo): void => {
 const finishRun = (db: DatabaseSync, info: RunInfo): void => {
   const totals = endpointTotals(readSeconds(db, info.id))
   // One transaction: either all of it is saved, or none of it.
-  db.exec('BEGIN')
-  try {
+  transaction(db, () => {
     updateRun(db, info)
     db.prepare('DELETE FROM endpoint_totals WHERE run_id = ?').run(info.id)
     const insert = db.prepare(
@@ -319,6 +339,14 @@ const finishRun = (db: DatabaseSync, info: RunInfo): void => {
     for (const total of totals) {
       insert.run(info.id, total.endpoint, encodeTotal(total))
     }
+  })
+}
+
+/** Run `f` in a transaction: commit if it returns, roll back if it throws. */
+const transaction = (db: DatabaseSync, f: () => void): void => {
+  db.exec('BEGIN')
+  try {
+    f()
     db.exec('COMMIT')
   } catch (error) {
     db.exec('ROLLBACK')
@@ -343,8 +371,9 @@ const makeStore = (db: DatabaseSync) => {
     create: (info, file) =>
       use('Could not save the run', () => {
         db.prepare(
-          `INSERT INTO runs (id, file, test_name, status, started_at, ended_at, info)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO runs (id, file, test_name, status, started_at, ended_at, info,
+                             project, branch, commit_sha, label)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           info.id,
           file,
@@ -353,6 +382,12 @@ const makeStore = (db: DatabaseSync) => {
           info.startedAt,
           info.endedAt,
           encodeInfo(info),
+          // The context never changes during a run, so it is only written
+          // here. `?? null` stores a missing value as NULL.
+          info.context?.project ?? null,
+          info.context?.git?.branch ?? null,
+          info.context?.git?.commit ?? null,
+          info.context?.label ?? null,
         )
       }),
 
@@ -375,20 +410,27 @@ const makeStore = (db: DatabaseSync) => {
 
     list: (options = {}) =>
       use('Could not read the run history', () => {
-        const limit = options.limit ?? 50
-        const rows = (
-          options.file === undefined
-            ? db
-                .prepare(
-                  'SELECT info FROM runs ORDER BY started_at DESC LIMIT ?',
-                )
-                .all(limit)
-            : db
-                .prepare(
-                  'SELECT info FROM runs WHERE file = ? ORDER BY started_at DESC LIMIT ?',
-                )
-                .all(options.file, limit)
-        ) as Array<{ readonly info: string }>
+        // Each filter given adds "column = ?". The column names are the
+        // keys written here, never text from a request; values are bound.
+        const filters = Object.entries({
+          file: options.file,
+          project: options.project,
+          branch: options.branch,
+          label: options.label,
+        }).flatMap(([column, value]) =>
+          value === undefined ? [] : [{ column, value }],
+        )
+        const where =
+          filters.length === 0
+            ? ''
+            : `WHERE ${filters.map(f => `${f.column} = ?`).join(' AND ')}`
+        const rows = db
+          .prepare(
+            `SELECT info FROM runs ${where} ORDER BY started_at DESC LIMIT ?`,
+          )
+          .all(...filters.map(f => f.value), options.limit ?? 50) as Array<{
+          readonly info: string
+        }>
         return rows.map(row => decodeInfo(row.info))
       }),
 

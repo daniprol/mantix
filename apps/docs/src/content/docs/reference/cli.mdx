@@ -18,7 +18,7 @@ Runs a test file headless, prints progress and a summary, checks thresholds,
 and exits with a code your CI can act on.
 
 ```sh
-mantix run <file> [--rate N] [--vus N] [--duration 30s] [--json out.json] [--quiet] [--no-history]
+mantix run <file> [--rate N] [--vus N] [--duration 30s] [--json out.json] [--quiet] [--label "text"] [--no-history]
 ```
 
 | Flag              | What it does                                                                                                                                                      |
@@ -29,6 +29,7 @@ mantix run <file> [--rate N] [--vus N] [--duration 30s] [--json out.json] [--qui
 | `--duration 30s`  | How long to run. With `--rate` or `--vus`, the length of that constant load. On its own, the file's stages are stretched or squeezed to fit, keeping their shape. |
 | `--json out.json` | Also write the full summary as JSON to this file.                                                                                                                 |
 | `--quiet`         | Don't print the per-second lines; print only the final summary.                                                                                                   |
+| `--label "text"`  | A note saved with the run, e.g. `"v2.3 on staging"`, to tell runs apart in the [run history](#run-context).                                                       |
 | `--no-history`    | Don't save this run to the [run history](#run-history).                                                                                                           |
 | `--history-file`  | Where the run history lives. Default `.mantix/history.db`.                                                                                                        |
 
@@ -37,6 +38,14 @@ seconds. Without `--duration`, `--rate` and `--vus` run for the file's
 planned duration.
 
 ### Output
+
+The first line names the test, its planned length and, inside a git
+repository, the branch and commit it ran at (with `(dirty)` if tracked files
+had uncommitted changes) and the label:
+
+```txt frame="terminal"
+  mantix · checkout · 30 s planned · main @ a1b2c3d (dirty) · v2.3 on staging
+```
 
 While the run goes, one line per second: elapsed time, iterations started
 against the target, the p99 latency for that second, and the share of failed
@@ -80,14 +89,14 @@ In a CI step, that is all you need:
 
 `--json` writes the run's summary as one JSON object:
 
-| Field        | Contents                                                                                                                                                                          |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`    | Format version, currently `1`.                                                                                                                                                    |
-| `run`        | The run: `id`, `testName`, `status` (`finished`, `stopped`, `aborted` or `crashed`), start and end times, the plan, and `thresholds` with each one's `actual` value and `passed`. |
-| `seconds`    | How many seconds of data the summary covers.                                                                                                                                      |
-| `iterations` | Counts: `started`, `completed`, `failed`, `dropped`.                                                                                                                              |
-| `total`      | Statistics for all endpoints together.                                                                                                                                            |
-| `endpoints`  | The same statistics, one entry per endpoint.                                                                                                                                      |
+| Field        | Contents                                                                                                                                                                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`    | Format version, currently `1`.                                                                                                                                                                                   |
+| `run`        | The run: `id`, `testName`, `status` (`finished`, `stopped`, `aborted` or `crashed`), start and end times, the plan, `thresholds` with each one's `actual` value and `passed`, and its [`context`](#run-context). |
+| `seconds`    | How many seconds of data the summary covers.                                                                                                                                                                     |
+| `iterations` | Counts: `started`, `completed`, `failed`, `dropped`.                                                                                                                                                             |
+| `total`      | Statistics for all endpoints together.                                                                                                                                                                           |
+| `endpoints`  | The same statistics, one entry per endpoint.                                                                                                                                                                     |
 
 Each statistics block (`total` and every entry of `endpoints`) has
 `endpoint`, `requests`, `errors`, `errorRate` (0 to 1), `rps`,
@@ -102,13 +111,14 @@ it does.
 Starts the local dashboard for a test file.
 
 ```sh
-mantix ui <file> [--port 4100]
+mantix ui <file> [--port 4100] [--label "text"]
 ```
 
 | Flag             | What it does                                               |
 | ---------------- | ---------------------------------------------------------- |
 | `<file>`         | The test file, as for `mantix run`.                        |
 | `--port 4100`    | The port for the dashboard. Default `4100`.                |
+| `--label "text"` | A note saved with every run started from this dashboard.   |
 | `--no-history`   | Keep runs in memory only; nothing is saved.                |
 | `--history-file` | Where the run history lives. Default `.mantix/history.db`. |
 
@@ -134,6 +144,7 @@ handy in CI or a container. A flag on the command line always wins.
 | ----------------------------- | ------------------------ |
 | `MANTIX_HISTORY_FILE=runs.db` | `--history-file runs.db` |
 | `MANTIX_HISTORY=false`        | `--no-history`           |
+| `MANTIX_LABEL="v2.3"`         | `--label "v2.3"`         |
 
 The file keeps the raw data of each second (latency histograms, status
 codes, error counts), never precomputed percentiles, so any window of any
@@ -145,14 +156,36 @@ as **stopped**. If the process is killed outright, the run is marked
 to that point. Saving never stops a test: if the file can't be written,
 Mantix prints a warning and carries on.
 
-The dashboard reads the history through the local HTTP API:
+### Run context
 
-| Endpoint                    | Returns                                                    |
-| --------------------------- | ---------------------------------------------------------- |
-| `GET /api/runs?limit=50`    | Runs of the loaded test file, newest first.                |
-| `GET /api/runs/:id`         | One run.                                                   |
-| `GET /api/runs/:id/seconds` | Every second of a run, histograms included.                |
-| `GET /api/runs/:id/events`  | The live stream; for a saved run, a replay that then ends. |
+Each run also records where it came from, so runs can be told apart and
+compared later, even across projects that share one history file
+(`--history-file`):
+
+| Field           | What it holds                                                                                                                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project`       | The `name` in the nearest `package.json`, looking from the folder you run Mantix in up to the root of its git repository. Without one, the repository's folder name, else the current folder's name. |
+| `git`           | `commit` (the full SHA), `branch` (absent on a detached HEAD) and `dirty` (tracked files had uncommitted changes; untracked files don't count). Absent outside a git repository or without git.      |
+| `mantixVersion` | The version of Mantix that ran the test.                                                                                                                                                             |
+| `machine`       | `hostname`, `os` (e.g. `linux x64`) and the `node` version.                                                                                                                                          |
+| `label`         | The text from `--label` or `MANTIX_LABEL`, if any.                                                                                                                                                   |
+
+Git is asked once when each run starts, with a short timeout; if it is
+missing or slow, the run goes ahead without the `git` field. With
+`mantix ui` and `mantix dev`, the label from the command line applies to
+every run started from that dashboard.
+
+### HTTP API
+
+The dashboard reads the history through the local HTTP API. Every run it
+returns includes its `context`.
+
+| Endpoint                    | Returns                                                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/runs?limit=50`    | Runs of the loaded test file, newest first. Add `project=`, `branch=` or `label=` to keep only matching runs, e.g. `?branch=main&label=nightly`. |
+| `GET /api/runs/:id`         | One run.                                                                                                                                         |
+| `GET /api/runs/:id/seconds` | Every second of a run, histograms included.                                                                                                      |
+| `GET /api/runs/:id/events`  | The live stream; for a saved run, a replay that then ends.                                                                                       |
 
 ## mantix dev
 
@@ -160,8 +193,10 @@ Everything `mantix ui` does, plus a watcher that lets you test your test
 while you write it.
 
 ```sh
-mantix dev <file> [--port 4100]
+mantix dev <file> [--port 4100] [--label "text"]
 ```
+
+It takes the same `--port`, `--label` and history flags as `mantix ui`.
 
 When it starts, and then every time you save the test file or any file in
 its folder, Mantix reloads the test, runs each scenario's `setup`, **one**
