@@ -15,6 +15,13 @@ import {
 } from '../src/RunContext.ts'
 import { MANTIX_VERSION } from '../src/Version.ts'
 
+// Git hooks (our pre-push runs these tests) set GIT_DIR and friends, which
+// would point every git call below at this repository instead of the
+// temporary ones. Each test file runs in its own worker, so this is local.
+for (const key of Object.keys(process.env)) {
+  if (key.startsWith('GIT_')) delete process.env[key]
+}
+
 let folder: string | undefined
 const tempFolder = () => {
   folder = mkdtempSync(join(tmpdir(), 'mantix-context-'))
