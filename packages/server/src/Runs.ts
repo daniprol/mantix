@@ -8,6 +8,9 @@
 import { Context, Effect, Layer, Option, Ref, Scope, Stream } from 'effect'
 
 import {
+  type Control,
+  type InvalidControl,
+  type JournalEntry,
   RunAlreadyActive,
   type RunEvent,
   type RunInfo,
@@ -35,6 +38,11 @@ export class Runs extends Context.Service<
     /** Every run so far, newest first. */
     readonly list: Effect.Effect<ReadonlyArray<RunInfo>>
     readonly get: (id: string) => Effect.Effect<RunInfo, RunNotFound>
+    /** Steer a running run; the control is added to its journal. */
+    readonly control: (
+      id: string,
+      control: Control,
+    ) => Effect.Effect<JournalEntry, RunNotFound | InvalidControl>
     /** Stop a run early and wait until teardown has finished. */
     readonly stop: (id: string) => Effect.Effect<RunInfo, RunNotFound>
     /** Replays the run so far, then follows it live until it ends. */
@@ -95,6 +103,8 @@ export class Runs extends Context.Service<
             Effect.forEach(list, handle => handle.info),
           ),
           get: id => Effect.flatMap(find(id), handle => handle.info),
+          control: (id, control) =>
+            Effect.flatMap(find(id), handle => handle.control(control)),
           stop: id =>
             Effect.flatMap(find(id), handle =>
               Effect.andThen(handle.stop, handle.info),

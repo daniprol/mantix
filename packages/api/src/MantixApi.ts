@@ -17,6 +17,7 @@ import {
   OpenApi,
 } from 'effect/http-api'
 
+import { Control, JournalEntry } from './Journal.ts'
 import { RunEvent, RunInfo, RunOverrides, TestInfo } from './Run.ts'
 
 /** Returned when a run id does not exist. */
@@ -30,6 +31,16 @@ export class RunNotFound extends Schema.TaggedError<RunNotFound>()(
 export class RunAlreadyActive extends Schema.TaggedError<RunAlreadyActive>()(
   'RunAlreadyActive',
   { id: Schema.String },
+  { httpApiStatus: 409 },
+) {}
+
+/**
+ * A control that cannot be applied right now: the run has ended, it is
+ * already paused, a number is out of range... The message says which.
+ */
+export class InvalidControl extends Schema.TaggedError<InvalidControl>()(
+  'InvalidControl',
+  { message: Schema.String },
   { httpApiStatus: 409 },
 ) {}
 
@@ -60,6 +71,16 @@ export class RunsGroup extends HttpApiGroup.make('runs')
       params: { id: Schema.String },
       success: RunInfo,
       error: RunNotFound,
+    }),
+    // Steer a running run: change the rate, add a spike, pause, resume or
+    // pin a moment. Each control is appended to the run's journal and
+    // returned as the new entry; the stream then sends a `RunUpdated` with
+    // the journal, so every open dashboard draws the same flag.
+    HttpApiEndpoint.post('control', '/runs/:id/controls', {
+      params: { id: Schema.String },
+      payload: Control,
+      success: JournalEntry,
+      error: [RunNotFound, InvalidControl],
     }),
     // The live stream. It first replays every Second so far, then sends new
     // ones as they close, and ends once the run is over. One message per

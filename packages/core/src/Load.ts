@@ -108,25 +108,5 @@ export const toPlan = (model: LoadModel): LoadPlan => ({
   })),
 })
 
-/** Total planned duration in seconds. */
-export const planDuration = (plan: LoadPlan): number =>
-  plan.stages.reduce((total, stage) => total + stage.duration, 0)
-
-/**
- * The planned target (rate or VUs) at `t` seconds into the plan. Between
- * stage boundaries the value moves in a straight line. After the plan ends
- * it returns 0.
- */
-export const targetAt = (plan: LoadPlan, t: number): number => {
-  let from = plan.start
-  let elapsed = 0
-  for (const stage of plan.stages) {
-    if (t < elapsed + stage.duration) {
-      const progress = stage.duration === 0 ? 1 : (t - elapsed) / stage.duration
-      return from + (stage.target - from) * progress
-    }
-    elapsed += stage.duration
-    from = stage.target
-  }
-  return 0
-}
+// Reading a plan is shared with the dashboard, so it lives in @mantix/api.
+export { planDuration, targetAt } from '@mantix/api'

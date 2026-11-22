@@ -134,9 +134,16 @@ const logNormal = (random: () => number, median: number, sigma: number) => {
   return median * Math.exp(sigma * normal)
 }
 
-export const simulateSecond = (sim: Simulation, t: number): Second => {
+/**
+ * `target` is the load asked for this second; by default the plan's. The
+ * mock server passes the steered value once someone uses the controls.
+ */
+export const simulateSecond = (
+  sim: Simulation,
+  t: number,
+  target: number = plannedAt(sim.plan, t + 0.5),
+): Second => {
   const { random } = sim
-  const target = plannedAt(sim.plan, t + 0.5)
   const progress = t / sim.duration
   // The server struggles between 55% and 75% of the run.
   const inSpike = progress >= 0.55 && progress < 0.75
