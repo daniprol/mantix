@@ -6,8 +6,8 @@
 /*
  * Design tokens, as OKLCH colours. Neutrals carry a slight cool hue. One
  * accent (amber) is only for the live edge, selection and focus. Red means
- * an error or a failed threshold and nothing else. Light and dark are the
- * same tokens with different values, treated as equals.
+ * an error or a failed threshold and nothing else. The theme is light:
+ * white paper, gray hairlines, ink.
  */
 :root {
   color-scheme: light;
@@ -23,24 +23,6 @@
   --accent-ink: oklch(0.56 0.13 62);
   --danger: oklch(0.565 0.2 27);
   --danger-wash: oklch(0.565 0.2 27 / 0.08);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --paper: oklch(0.172 0.007 255);
-    --wash: oklch(0.207 0.008 255);
-    --hairline: oklch(0.275 0.009 255);
-    --ink: oklch(0.935 0.005 255);
-    --ink-2: oklch(0.73 0.01 255);
-    --ink-3: oklch(0.57 0.011 255);
-    --heat: oklch(0.74 0.09 250);
-    --lag: oklch(0.73 0.01 255 / 0.09);
-    --accent: oklch(0.8 0.145 75);
-    --accent-ink: oklch(0.82 0.13 75);
-    --danger: oklch(0.69 0.18 25);
-    --danger-wash: oklch(0.69 0.18 25 / 0.12);
-  }
 }
 
 /* Tailwind reads the tokens, so `text-ink-2` or `border-hairline` work. */
@@ -119,9 +101,18 @@ body {
   border-right: 1px solid var(--ink-3) !important;
 }
 
+.timeline-track {
+  border-top: 1px solid var(--hairline);
+}
+
+/* The selection box while dragging across the timeline. */
+.u-select {
+  background: oklch(0.76 0.155 70 / 0.12) !important;
+}
+
 .timeline-readout {
   position: absolute;
-  top: 6px;
+  top: -26px;
   right: 0;
   height: 16px;
   font-family: var(--font-mono);

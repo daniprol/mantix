@@ -1,6 +1,6 @@
 /**
  * Colours for canvas drawing, read from the CSS tokens in styles.css so the
- * charts follow light and dark mode exactly like the rest of the page.
+ * charts use exactly the colours of the rest of the page.
  */
 
 export type Palette = Readonly<{
@@ -11,6 +11,7 @@ export type Palette = Readonly<{
   hairline: string
   heat: string
   accent: string
+  accentInk: string
   danger: string
   lag: string
 }>
@@ -28,10 +29,10 @@ export const readPalette = (element: Element): Palette => {
     hairline: token(styles, '--hairline'),
     heat: token(styles, '--heat'),
     accent: token(styles, '--accent'),
+    accentInk: token(styles, '--accent-ink'),
     danger: token(styles, '--danger'),
     lag: token(styles, '--lag'),
   }
 }
 
-export const SANS = "'Geist Variable', ui-sans-serif, system-ui, sans-serif"
 export const MONO = "'Geist Mono Variable', ui-monospace, monospace"

@@ -7,12 +7,31 @@
  */
 import { Effect, Option, Schema } from 'effect'
 import { Command } from 'foldkit'
+import { load, pushUrl } from 'foldkit/navigation'
 
-import { RunInfo, RunOverrides, Second } from '@mantix/api'
+import { RunOverrides } from '@mantix/api'
 
 import { MantixClient, describeError } from './api.ts'
-import { TIMELINE_HOST_ID, findTimeline } from './charts/store.ts'
+import {
+  TIMELINE_HOST_ID,
+  TimelineInput,
+  findTimeline,
+} from './charts/store.ts'
 import { Message } from './message.ts'
+
+export const NavigateInternal = Command.define('NavigateInternal', {
+  args: { url: Schema.String },
+  messages: [Message.CompletedNavigate],
+  execute: ({ url }) =>
+    pushUrl(url).pipe(Effect.as(Message.CompletedNavigate())),
+})
+
+export const LoadExternal = Command.define('LoadExternal', {
+  args: { href: Schema.String },
+  messages: [Message.CompletedNavigate],
+  execute: ({ href }) =>
+    load(href).pipe(Effect.as(Message.CompletedNavigate())),
+})
 
 export const LoadTest = Command.define('LoadTest', {
   messages: [Message.SucceededLoadTest, Message.FailedLoadTest],
@@ -26,6 +45,50 @@ export const LoadTest = Command.define('LoadTest', {
     ),
     Effect.provide(MantixClient.layer),
   ),
+})
+
+export const FetchHistory = Command.define('FetchHistory', {
+  messages: [Message.SucceededFetchHistory, Message.FailedFetchHistory],
+  execute: Effect.gen(function* () {
+    const client = yield* MantixClient
+    const runs = yield* client.runs.list({ query: {} })
+    return Message.SucceededFetchHistory({ runs })
+  }).pipe(
+    Effect.catch(error =>
+      Effect.succeed(
+        Message.FailedFetchHistory({ error: describeError(error) }),
+      ),
+    ),
+    Effect.provide(MantixClient.layer),
+  ),
+})
+
+/**
+ * A run and every Second it has so far. A finished run never changes, so
+ * this happens once; a live run then follows its stream (subscriptions.ts).
+ */
+export const LoadRun = Command.define('LoadRun', {
+  args: { runId: Schema.String },
+  messages: [Message.SucceededLoadRun, Message.FailedLoadRun],
+  execute: ({ runId }) =>
+    Effect.gen(function* () {
+      const client = yield* MantixClient
+      const [run, seconds] = yield* Effect.all(
+        [
+          client.runs.get({ params: { id: runId } }),
+          client.runs.seconds({ params: { id: runId } }),
+        ],
+        { concurrency: 2 },
+      )
+      return Message.SucceededLoadRun({ run, seconds })
+    }).pipe(
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedLoadRun({ runId, error: describeError(error) }),
+        ),
+      ),
+      Effect.provide(MantixClient.layer),
+    ),
 })
 
 export const StartRun = Command.define('StartRun', {
@@ -60,31 +123,17 @@ export const StopRun = Command.define('StopRun', {
     ),
 })
 
-export const FetchRuns = Command.define('FetchRuns', {
-  messages: [Message.SucceededFetchRuns, Message.FailedFetchRuns],
-  execute: Effect.gen(function* () {
-    const client = yield* MantixClient
-    const runs = yield* client.runs.list({ query: {} })
-    return Message.SucceededFetchRuns({ runs })
-  }).pipe(
-    Effect.catch(error =>
-      Effect.succeed(Message.FailedFetchRuns({ error: describeError(error) })),
-    ),
-    Effect.provide(MantixClient.layer),
-  ),
-})
-
 /**
  * Hand the latest data to the mounted timeline. The chart keeps its own
  * copy outside the Model; if no timeline is mounted, there is nothing to do.
  */
 export const SyncTimeline = Command.define('SyncTimeline', {
-  args: { run: RunInfo, seconds: Schema.Array(Second) },
+  args: { input: TimelineInput },
   messages: [Message.CompletedSyncTimeline],
-  execute: ({ run, seconds }) =>
+  execute: ({ input }) =>
     Effect.sync(() => {
       Option.map(findTimeline(TIMELINE_HOST_ID), timeline =>
-        timeline.update({ run, seconds }),
+        timeline.update(input),
       )
       return Message.CompletedSyncTimeline()
     }),

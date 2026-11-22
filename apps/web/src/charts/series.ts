@@ -1,161 +1,171 @@
 /**
- * Turning Seconds into the columns the timeline draws. Pure functions: the
- * chart code only paints what this returns.
+ * Turning a TimelineInput into the columns the timeline draws. Pure
+ * functions: the chart code only paints what this returns.
  *
  * The x axis is "seconds since start". Second `t` covers [t, t+1), so its
  * point sits at x = t + 1 and the planned line starts at x = 0.
  */
 import { Array, Option, pipe } from 'effect'
 
-import {
-  Histogram,
-  type RunInfo,
-  type Second,
-  countRequestErrors,
-  isLoad,
-} from '@mantix/api'
+import { Histogram, type Second, countRequestErrors, isLoad } from '@mantix/api'
 
 import { plannedTotalAt } from '../domain/plan.ts'
 import { LAG_LIMIT_MS } from '../domain/stats.ts'
-import * as Threshold from '../domain/threshold.ts'
-import type { TimelineData } from './store.ts'
+import type { LatencyLimit, TimelineInput } from './store.ts'
 
 /** One second, boiled down to what the charts need. */
 type SecondColumn = Readonly<{
   p50: number | null
-  p99: number | null
+  p95: number | null
   requests: number
-  /** Iterations started this second (the open model's load). */
-  started: number
-  /** Virtual users alive at the end of the second (the closed model's load). */
-  vus: number
+  /** The top track's value: iterations/s, VUs or requests/s. */
+  load: number
   errors: number
   lagged: boolean
   /** Latency distribution as [ms, count] pairs, for the heatmap. */
   cells: ReadonlyArray<readonly [number, number]>
 }>
 
-type LatencyLimit = Readonly<{ ms: number; failed: boolean }>
+type Columns = ReadonlyArray<Option.Option<SecondColumn>>
 
 export type TimelineSeries = Readonly<{
   x: Array<number>
   /** Index i holds second t = i - 1; index 0 is the start (no data). */
-  columns: ReadonlyArray<Option.Option<SecondColumn>>
+  columns: Columns
+  baselineColumns: Columns
+  hasBaseline: boolean
   p50: Array<number | null>
-  p99: Array<number | null>
-  /** The load lane compares like with like: planned against achieved
-   *  iterations/s for the open model, or virtual users for the closed one. */
+  p95: Array<number | null>
+  baselineP95: Array<number | null>
+  planned: Array<number | null>
+  load: Array<number | null>
+  baselineLoad: Array<number | null>
+  topTrack: TimelineInput['topTrack']
   isRate: boolean
-  target: Array<number | null>
-  achieved: Array<number | null>
   maybeLiveEdge: Option.Option<number>
   maybeLimit: Option.Option<LatencyLimit>
+  maybeRange: TimelineInput['maybeRange']
   latencyRange: readonly [number, number]
+  /** The error count at full height, so both runs share one scale. */
+  mostErrors: number
 }>
 
-const toColumn = (second: Second): SecondColumn => {
-  // The same rules as the summary: the timeline shows the load (no setup or
-  // teardown requests), and a ScriptError is not a failed request.
-  const endpoints = second.endpoints.filter(isLoad)
-  const merged = Histogram.mergeAll(endpoints.map(endpoint => endpoint.latency))
-  const requests = endpoints.reduce((sum, e) => sum + e.requests, 0)
-  const errors = endpoints.reduce(
-    (sum, e) => sum + countRequestErrors(e.errors),
-    0,
-  )
-  const cells = merged.buckets.map(([index, count]) => {
-    const [lower, upper] = Histogram.bucketBounds(index)
-    return [(lower + upper) / 2 / 1000, count] as const
-  })
-  return {
-    p50: merged.count === 0 ? null : Histogram.percentile(merged, 0.5) / 1000,
-    p99: merged.count === 0 ? null : Histogram.percentile(merged, 0.99) / 1000,
-    requests,
-    started: second.started,
-    vus: second.vus,
-    errors,
-    lagged: second.loopLagMs > LAG_LIMIT_MS,
-    cells,
+const toColumn =
+  (topTrack: TimelineInput['topTrack'], isRate: boolean) =>
+  (second: Second): SecondColumn => {
+    // The timeline shows the load (no setup or teardown requests), and a
+    // ScriptError is not a failed request: the same rules as the summary.
+    const endpoints = second.endpoints.filter(isLoad)
+    const merged = Histogram.mergeAll(endpoints.map(each => each.latency))
+    const requests = endpoints.reduce((sum, each) => sum + each.requests, 0)
+    const errors = endpoints.reduce(
+      (sum, each) => sum + countRequestErrors(each.errors),
+      0,
+    )
+    const cells = merged.buckets.map(([index, count]) => {
+      const [lower, upper] = Histogram.bucketBounds(index)
+      return [(lower + upper) / 2 / 1000, count] as const
+    })
+    const percentile = (q: number) =>
+      merged.count === 0 ? null : Histogram.percentile(merged, q) / 1000
+    return {
+      p50: percentile(0.5),
+      p95: percentile(0.95),
+      requests,
+      load:
+        topTrack === 'Throughput'
+          ? requests
+          : isRate
+            ? second.started
+            : second.vus,
+      errors,
+      lagged: second.loopLagMs > LAG_LIMIT_MS,
+      cells,
+    }
   }
+
+const columnsOf = (
+  seconds: ReadonlyArray<Second>,
+  x: ReadonlyArray<number>,
+  toSecondColumn: (second: Second) => SecondColumn,
+): Columns => {
+  const byIndex = new Map(seconds.map(second => [second.t + 1, second]))
+  return x.map(i =>
+    pipe(Option.fromNullishOr(byIndex.get(i)), Option.map(toSecondColumn)),
+  )
 }
 
-/** The first latency threshold of the run, to draw as a limit line. */
-const latencyLimit = (run: RunInfo): Option.Option<LatencyLimit> =>
-  pipe(
-    run.thresholds,
-    Array.filter(result => result.endpoint === undefined),
-    Array.findFirst(result =>
-      pipe(
-        Threshold.parse(result.expression),
-        Option.filter(t => t.metric !== 'errors' && t.metric !== 'rps'),
-        Option.map(t => ({ ms: t.limit, failed: !result.passed })),
-      ),
-    ),
+const valuesOf = (
+  columns: Columns,
+  pick: (column: SecondColumn) => number | null,
+): Array<number | null> =>
+  columns.map(column =>
+    Option.match(column, { onNone: () => null, onSome: pick }),
   )
+
+/** Errors per second drawn at full height, at least. */
+const ERRORS_FLOOR = 10
 
 const niceLow = (value: number): number =>
   10 ** Math.floor(Math.log10(Math.max(value, 0.01)))
 
-export const buildSeries = ({ run, seconds }: TimelineData): TimelineSeries => {
-  const length = Math.max(Math.ceil(run.duration), seconds.length)
-  const x = Array.makeBy(length + 1, i => i)
-  const byIndex = new Map(seconds.map(second => [second.t + 1, second]))
-  const columns = x.map(i =>
-    pipe(Option.fromNullishOr(byIndex.get(i)), Option.map(toColumn)),
+export const buildSeries = (input: TimelineInput): TimelineSeries => {
+  const baseline = Option.getOrElse(input.maybeBaseline, () => [])
+  const length = Math.max(
+    Math.ceil(input.duration),
+    input.current.length,
+    baseline.length,
   )
-  const value = (pick: (column: SecondColumn) => number | null) =>
-    columns.map(column =>
-      Option.match(column, { onNone: () => null, onSome: pick }),
-    )
-  const p50 = value(column => column.p50)
-  const p99 = value(column => column.p99)
-  const isRate = run.plan.every(scenario => scenario.plan.model === 'rate')
-  const target = x.map(i => plannedTotalAt(run.plan, i))
-  const maybeLimit = latencyLimit(run)
+  const x = Array.makeBy(length + 1, i => i)
+  const toSecondColumn = toColumn(input.topTrack, input.isRate)
+  const columns = columnsOf(input.current, x, toSecondColumn)
+  const baselineColumns = columnsOf(baseline, x, toSecondColumn)
 
-  const observed = Array.getSomes(columns)
+  const observed = [
+    ...Array.getSomes(columns),
+    ...Array.getSomes(baselineColumns),
+  ]
   const lowest = observed.reduce(
     (low, column) => Math.min(low, column.p50 ?? low),
     Number.POSITIVE_INFINITY,
   )
   const highest = observed.reduce(
-    (high, column) => Math.max(high, column.p99 ?? 0),
+    (high, column) => Math.max(high, column.p95 ?? 0),
     0,
   )
-  const limitMs = Option.match(maybeLimit, {
+  const limitMs = Option.match(input.maybeLimit, {
     onNone: () => 0,
     onSome: limit => limit.ms,
   })
-  const latencyRange = [
-    Number.isFinite(lowest) ? niceLow(lowest / 2) : 1,
-    Math.max(highest * 1.4, limitMs * 1.6, 10),
-  ] as const
 
   return {
     x,
     columns,
-    p50,
-    p99,
-    isRate,
-    target,
-    achieved: value(column => (isRate ? column.started : column.vus)),
-    maybeLiveEdge:
-      run.status === 'running' ? Option.some(seconds.length) : Option.none(),
-    maybeLimit,
-    latencyRange,
+    baselineColumns,
+    hasBaseline: Option.isSome(input.maybeBaseline),
+    p50: valuesOf(columns, column => column.p50),
+    p95: valuesOf(columns, column => column.p95),
+    baselineP95: valuesOf(baselineColumns, column => column.p95),
+    planned: Array.isReadonlyArrayEmpty(input.plan)
+      ? x.map(() => null)
+      : x.map(i => plannedTotalAt(input.plan, i)),
+    load: valuesOf(columns, column => column.load),
+    baselineLoad: valuesOf(baselineColumns, column => column.load),
+    topTrack: input.topTrack,
+    isRate: input.isRate,
+    maybeLiveEdge: input.isLive
+      ? Option.some(input.current.length)
+      : Option.none(),
+    maybeLimit: input.maybeLimit,
+    maybeRange: input.maybeRange,
+    latencyRange: [
+      Number.isFinite(lowest) ? niceLow(lowest / 2) : 10,
+      Math.max(highest * 1.6, limitMs * 1.6, 100),
+    ],
+    // A floor keeps a lone error a small tick instead of a full bar.
+    mostErrors: Math.max(
+      ERRORS_FLOOR,
+      ...observed.map(column => column.errors),
+    ),
   }
-}
-
-/** What the charts show before any data arrives. */
-export const EMPTY_SERIES: TimelineSeries = {
-  x: [],
-  columns: [],
-  p50: [],
-  p99: [],
-  isRate: true,
-  target: [],
-  achieved: [],
-  maybeLiveEdge: Option.none(),
-  maybeLimit: Option.none(),
-  latencyRange: [1, 1000],
 }

@@ -1,11 +1,17 @@
 /**
- * The timeline: a latency chart (heatmap with p50 and p99 drawn on top) and
- * a throughput lane under it, sharing the x axis and the hover cursor.
+ * The timeline: three tracks over one shared clock.
+ *
+ *   Load (or Throughput)   planned dotted, achieved solid
+ *   Latency                heatmap with p95 and p50 on a log scale
+ *   Errors                 red bars; when comparing, the baseline's bars
+ *                          hang below the axis, mirrored
  *
  * Foldkit idea: Mount. The view puts `OnMount(MountTimeline())` on an empty
  * div. When that div enters the page, Foldkit runs this Mount with the real
  * element; we create the uPlot charts inside `Effect.acquireRelease`, so
- * they are destroyed automatically when the element leaves the page.
+ * they are destroyed automatically when the element leaves the page. The
+ * Mount is a stream, so the charts can also send Messages back: dragging
+ * across a track sends `SelectedRange`.
  *
  * Data never comes from the view. The SyncTimeline Command (commands.ts)
  * finds the handle in the store and calls `update`.
@@ -16,84 +22,120 @@ import uPlot from 'uplot'
 
 import * as Format from '../domain/format.ts'
 import { Message } from '../message.ts'
-import { MONO, type Palette, SANS, readPalette } from './palette.ts'
-import { EMPTY_SERIES, type TimelineSeries, buildSeries } from './series.ts'
+import { AXIS, RIGHT, TIME_ROOM, TRACK_HEIGHTS, X_AXIS_ROOM } from './layout.ts'
+import { MONO, type Palette, readPalette } from './palette.ts'
+import { type TimelineSeries, buildSeries } from './series.ts'
 import {
   TIMELINE_HOST_ID,
-  type TimelineData,
   type TimelineHandle,
+  type TimelineInput,
   registerTimeline,
   unregisterTimeline,
 } from './store.ts'
 
-const LATENCY_HEIGHT = 262
-const LANE_HEIGHT = 150
-const AXIS_WIDTH = 56
-/** Room on the right for the labels written at the end of each line. */
-const LABEL_ROOM = 92
-const HEAT_ROWS = 48
-/** Room above each plot for its title. */
-const TITLE_ROOM = 30
+const HEAT_ROWS = 40
 const CURSOR_SYNC_KEY = 'mantix-timeline'
 
-// DRAWING HELPERS
-
-type Drawing = {
-  series: TimelineSeries
-  palette: Palette
-}
+type Drawing = Readonly<{ series: TimelineSeries; palette: Palette }>
 
 const px = (u: uPlot, cssPixels: number) => cssPixels * uPlot.pxRatio
 
-/** Fill the columns of seconds that match `test`, full plot height. */
-const shadeColumns = (
+// DRAWING HELPERS
+
+/** The canvas x of the start of second `t` (x = t on the axis). */
+const xOf = (u: uPlot, t: number) => u.valToPos(t, 'x', true)
+
+const fillColumns = (
   u: uPlot,
-  series: TimelineSeries,
-  test: (index: number) => boolean,
+  from: number,
+  to: number,
   colour: string,
+  alpha = 1,
 ) => {
   const { ctx } = u
-  const { top, height } = u.bbox
   ctx.save()
+  ctx.globalAlpha = alpha
   ctx.fillStyle = colour
-  series.x.forEach(i => {
-    if (i > 0 && test(i)) {
-      const left = u.valToPos(i - 1, 'x', true)
-      const right = u.valToPos(i, 'x', true)
-      ctx.fillRect(left, top, right - left, height)
-    }
-  })
+  ctx.fillRect(
+    xOf(u, from),
+    u.bbox.top,
+    xOf(u, to) - xOf(u, from),
+    u.bbox.height,
+  )
   ctx.restore()
 }
 
+const verticalLine = (u: uPlot, t: number, colour: string, width: number) => {
+  const { ctx } = u
+  const x = Math.round(xOf(u, t)) + 0.5
+  ctx.save()
+  ctx.strokeStyle = colour
+  ctx.lineWidth = px(u, width)
+  ctx.beginPath()
+  ctx.moveTo(x, u.bbox.top)
+  ctx.lineTo(x, u.bbox.top + u.bbox.height)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** Seconds where Mantix itself lagged, lightly shaded. */
 const drawLagShading = (u: uPlot, { series, palette }: Drawing) =>
-  shadeColumns(
-    u,
-    series,
-    i =>
-      Option.match(series.columns[i] ?? Option.none(), {
-        onNone: () => false,
-        onSome: column => column.lagged,
-      }),
-    palette.lag,
+  series.columns.forEach((column, i) =>
+    Option.map(column, ({ lagged }) => {
+      if (lagged) {
+        fillColumns(u, i - 1, i, palette.lag)
+      }
+    }),
   )
 
-const drawLiveEdge = (u: uPlot, { series, palette }: Drawing) =>
-  Option.map(series.maybeLiveEdge, edge => {
-    const { ctx } = u
-    const x = Math.round(u.valToPos(edge, 'x', true)) + 0.5
-    ctx.save()
-    ctx.strokeStyle = palette.accent
-    ctx.lineWidth = px(u, 1.5)
-    ctx.beginPath()
-    ctx.moveTo(x, u.bbox.top)
-    ctx.lineTo(x, u.bbox.top + u.bbox.height)
-    ctx.stroke()
-    ctx.restore()
+/** The selected range: a light amber wash with its two edges. */
+const drawRange = (u: uPlot, { series, palette }: Drawing) =>
+  Option.map(series.maybeRange, ({ from, to }) => {
+    fillColumns(u, from, to, palette.accent, 0.1)
+    verticalLine(u, from, palette.accent, 1)
+    verticalLine(u, to, palette.accent, 1)
   })
+
+const drawLiveEdge = (u: uPlot, { series, palette }: Drawing) =>
+  Option.map(series.maybeLiveEdge, edge =>
+    verticalLine(u, edge, palette.accent, 1.5),
+  )
+
+const drawText = (
+  u: uPlot,
+  text: string,
+  x: number,
+  y: number,
+  colour: string,
+  align: CanvasTextAlign = 'center',
+) => {
+  const { ctx } = u
+  ctx.save()
+  ctx.font = `500 ${px(u, 11)}px ${MONO}`
+  ctx.fillStyle = colour
+  ctx.textAlign = align
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, x, y)
+  ctx.restore()
+}
+
+/** Above the top track: the playhead's time, or the range's two times. */
+const drawTimes = (u: uPlot, { series, palette }: Drawing) => {
+  const y = u.bbox.top - px(u, TIME_ROOM / 2)
+  Option.map(series.maybeLiveEdge, edge =>
+    drawText(u, Format.clock(edge), xOf(u, edge), y, palette.accentInk),
+  )
+  Option.map(series.maybeRange, ({ from, to }) => {
+    drawText(u, Format.clock(from), xOf(u, from), y, palette.accentInk, 'right')
+    drawText(u, Format.clock(to), xOf(u, to), y, palette.accentInk, 'left')
+  })
+}
 
 /** The latency heatmap: one column per second, one row per latency band. */
 const drawHeatmap = (u: uPlot, { series, palette }: Drawing) => {
+  if (series.hasBaseline) {
+    return
+  }
   const [low, high] = series.latencyRange
   const logLow = Math.log10(low)
   const logHigh = Math.log10(high)
@@ -120,34 +162,60 @@ const drawHeatmap = (u: uPlot, { series, palette }: Drawing) => {
     ),
   )
   const busiest = Math.max(1, ...Array.getSomes(grids).flatMap(rows => rows))
+  const rowEdge = (row: number) =>
+    u.valToPos(
+      10 ** (logLow + (row / HEAT_ROWS) * (logHigh - logLow)),
+      'y',
+      true,
+    )
   const { ctx } = u
   ctx.save()
   ctx.fillStyle = palette.heat
   grids.forEach((maybeRows, i) =>
     Option.map(maybeRows, rows => {
-      const left = u.valToPos(i - 1, 'x', true)
-      const right = u.valToPos(i, 'x', true)
+      const left = xOf(u, i - 1)
+      const right = xOf(u, i)
       rows.forEach((count, row) => {
         if (count === 0) {
           return
         }
-        const bottom = u.valToPos(
-          10 ** (logLow + (row / HEAT_ROWS) * (logHigh - logLow)),
-          'y',
-          true,
-        )
-        const top = u.valToPos(
-          10 ** (logLow + ((row + 1) / HEAT_ROWS) * (logHigh - logLow)),
-          'y',
-          true,
-        )
+        const bottom = rowEdge(row)
+        const top = rowEdge(row + 1)
         // Log scale for colour too, so rare slow requests stay visible.
         ctx.globalAlpha =
-          0.06 + 0.64 * (Math.log1p(count) / Math.log1p(busiest)) ** 1.6
+          0.04 + 0.36 * (Math.log1p(count) / Math.log1p(busiest)) ** 1.4
         ctx.fillRect(left, top, right - left + 0.5, bottom - top + 0.5)
       })
     }),
   )
+  ctx.restore()
+}
+
+/** When comparing, tint the gap between the two p95 lines. */
+const drawGap = (u: uPlot, { series, palette }: Drawing) => {
+  if (!series.hasBaseline) {
+    return
+  }
+  const { ctx } = u
+  ctx.save()
+  ctx.fillStyle = palette.ink3
+  ctx.globalAlpha = 0.14
+  series.x.forEach(i => {
+    const a = series.p95[i]
+    const b = series.baselineP95[i]
+    const nextA = series.p95[i + 1]
+    const nextB = series.baselineP95[i + 1]
+    if (a == null || b == null || nextA == null || nextB == null) {
+      return
+    }
+    ctx.beginPath()
+    ctx.moveTo(xOf(u, i), u.valToPos(a, 'y', true))
+    ctx.lineTo(xOf(u, i + 1), u.valToPos(nextA, 'y', true))
+    ctx.lineTo(xOf(u, i + 1), u.valToPos(nextB, 'y', true))
+    ctx.lineTo(xOf(u, i), u.valToPos(b, 'y', true))
+    ctx.closePath()
+    ctx.fill()
+  })
   ctx.restore()
 }
 
@@ -171,18 +239,17 @@ const drawEndLabels = (
       label.y = previous.y + gap
     }
   })
-  // Then keep them inside the plot, so none sits on the x axis labels,
-  // pushing neighbours up instead.
+  // Then keep them inside the plot, pushing neighbours up instead.
   const bottom = u.bbox.top + u.bbox.height - px(u, 5)
   ;[...sorted].reverse().forEach((label, index, fromBottom) => {
     const below = fromBottom[index - 1]
     const isNear =
       below !== undefined && Math.abs(label.x - below.x) < px(u, 90)
     const limit = isNear ? Math.min(bottom, below.y - gap) : bottom
-    label.y = Math.min(label.y, limit)
+    label.y = Math.max(u.bbox.top + px(u, 5), Math.min(label.y, limit))
   })
   ctx.save()
-  ctx.font = `500 ${px(u, 11)}px ${SANS}`
+  ctx.font = `${px(u, 11)}px ${MONO}`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
   // A halo in the page colour keeps labels readable over lines.
@@ -190,9 +257,9 @@ const drawEndLabels = (
   ctx.lineJoin = 'round'
   ctx.strokeStyle = palette.paper
   sorted.forEach(label => {
-    ctx.strokeText(label.text, label.x + px(u, 6), label.y)
+    ctx.strokeText(label.text, label.x + px(u, 8), label.y)
     ctx.fillStyle = label.colour
-    ctx.fillText(label.text, label.x + px(u, 6), label.y)
+    ctx.fillText(label.text, label.x + px(u, 8), label.y)
   })
   ctx.restore()
 }
@@ -206,29 +273,33 @@ const lastPoint = (
   return index < 0 || value === null || value === undefined
     ? Option.none()
     : Option.some({
-        x: u.valToPos(index, 'x', true),
+        x: xOf(u, index),
         y: u.valToPos(value, 'y', true),
         value,
       })
 }
 
-const drawLaneTitle = (u: uPlot, title: string, palette: Palette) => {
-  const { ctx } = u
-  ctx.save()
-  ctx.font = `500 ${px(u, 11)}px ${SANS}`
-  ctx.fillStyle = palette.ink2
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'bottom'
-  ctx.fillText(title, 0, u.bbox.top - px(u, 10))
-  ctx.restore()
-}
+const endLabel = (
+  u: uPlot,
+  values: ReadonlyArray<number | null>,
+  text: (value: number) => string,
+  colour: string,
+): Option.Option<EndLabel> =>
+  Option.map(lastPoint(u, values), point => ({
+    text: text(point.value),
+    x: point.x,
+    y: point.y,
+    colour,
+  }))
+
+const latencyText = (ms: number) => Format.text(Format.latency(ms))
 
 const drawLatencyOverlays = (u: uPlot, drawing: Drawing) => {
   const { series, palette } = drawing
   const { ctx } = u
   const maybeLimitLabel = Option.map(series.maybeLimit, limit => {
     const y = Math.round(u.valToPos(limit.ms, 'y', true)) + 0.5
-    const colour = limit.failed ? palette.danger : palette.ink3
+    const colour = limit.failed ? palette.danger : palette.ink2
     ctx.save()
     ctx.strokeStyle = colour
     ctx.lineWidth = px(u, 1)
@@ -239,80 +310,100 @@ const drawLatencyOverlays = (u: uPlot, drawing: Drawing) => {
     ctx.stroke()
     ctx.restore()
     return {
-      text: `limit ${Format.text(Format.latency(limit.ms))}`,
+      text: `${limit.metric} limit ${latencyText(limit.ms)}`,
       x: u.bbox.left + u.bbox.width,
       y,
       colour,
     }
   })
-  const labels = [
-    Option.map(lastPoint(u, series.p99), point => ({
-      text: `p99 ${Format.text(Format.latency(point.value))}`,
-      x: point.x,
-      y: point.y,
-      colour: palette.ink,
-    })),
-    Option.map(lastPoint(u, series.p50), point => ({
-      text: `p50 ${Format.text(Format.latency(point.value))}`,
-      x: point.x,
-      y: point.y,
-      colour: palette.ink2,
-    })),
-    maybeLimitLabel,
-  ]
-  drawEndLabels(u, palette, Array.getSomes(labels))
-  drawLaneTitle(u, 'Latency', palette)
+  const labels = series.hasBaseline
+    ? [
+        endLabel(
+          u,
+          series.p95,
+          value => `p95 ${latencyText(value)}`,
+          palette.ink,
+        ),
+        endLabel(u, series.baselineP95, () => 'baseline', palette.ink2),
+      ]
+    : [
+        endLabel(
+          u,
+          series.p95,
+          value => `p95 ${latencyText(value)}`,
+          palette.ink,
+        ),
+        endLabel(
+          u,
+          series.p50,
+          value => `p50 ${latencyText(value)}`,
+          palette.ink2,
+        ),
+      ]
+  drawEndLabels(u, palette, Array.getSomes([...labels, maybeLimitLabel]))
 }
 
-/** "33.3/s" for the open model, "50" (users) for the closed one. */
+/** "33.3 /s" for a rate, "50" (users) for the closed model. */
 const loadText = (series: TimelineSeries, value: number): string =>
-  series.isRate ? Format.text(Format.rate(value)) : Format.grouped(value)
+  series.topTrack === 'Load' && !series.isRate
+    ? Format.grouped(value)
+    : Format.text(Format.rate(value))
 
-const drawLaneOverlays = (u: uPlot, drawing: Drawing) => {
+const drawTopOverlays = (u: uPlot, drawing: Drawing) => {
   const { series, palette } = drawing
-  const { ctx } = u
-  // Errors: a red tick per second at the foot of the lane, taller for a
-  // larger share of failed requests.
-  ctx.save()
-  ctx.fillStyle = palette.danger
-  series.columns.forEach((column, i) =>
-    Option.map(column, ({ errors, requests }) => {
-      if (errors === 0) {
-        return
-      }
-      const share = requests === 0 ? 1 : errors / requests
-      const height = px(u, 3 + 13 * Math.min(1, share * 20))
-      const centre = u.valToPos(i - 0.5, 'x', true)
-      const width = px(u, 2)
-      ctx.fillRect(
-        centre - width / 2,
-        u.bbox.top + u.bbox.height - height,
-        width,
-        height,
-      )
-    }),
-  )
-  ctx.restore()
-  const labels = [
-    Option.map(lastPoint(u, series.achieved), point => ({
-      text: `${loadText(series, point.value)} achieved`,
-      x: point.x,
-      y: point.y,
-      colour: palette.ink,
-    })),
-    Option.map(lastPoint(u, series.target), point => ({
-      text: 'planned',
-      x: point.x,
-      y: point.y,
-      colour: palette.ink3,
-    })),
-  ]
-  drawEndLabels(u, palette, Array.getSomes(labels))
-  drawLaneTitle(
+  drawEndLabels(
     u,
-    series.isRate ? 'Load · iterations/s' : 'Load · virtual users',
     palette,
+    Array.getSomes([
+      endLabel(u, series.load, value => loadText(series, value), palette.ink),
+      Option.isSome(series.maybeLiveEdge) || series.load.every(v => v === null)
+        ? endLabel(u, series.planned, () => 'planned', palette.ink2)
+        : Option.none(),
+    ]),
   )
+}
+
+/** Error bars: this run above the axis, the baseline mirrored below it. */
+const drawErrors = (u: uPlot, { series, palette }: Drawing) => {
+  const { ctx } = u
+  const zero = Math.round(u.valToPos(0, 'y', true)) + 0.5
+  ctx.save()
+  ctx.strokeStyle = palette.hairline
+  ctx.lineWidth = px(u, 1)
+  ctx.beginPath()
+  ctx.moveTo(u.bbox.left, zero)
+  ctx.lineTo(u.bbox.left + u.bbox.width, zero)
+  ctx.stroke()
+  const bars = (
+    columns: TimelineSeries['columns'],
+    colour: string,
+    direction: 1 | -1,
+  ) => {
+    ctx.fillStyle = colour
+    columns.forEach((column, i) =>
+      Option.map(column, ({ errors }) => {
+        if (errors === 0) {
+          return
+        }
+        const width = Math.min(px(u, 3), (xOf(u, i) - xOf(u, i - 1)) * 0.6)
+        const left = xOf(u, i - 0.5) - width / 2
+        const top = u.valToPos(direction * errors, 'y', true)
+        // Even a single error gets a visible tick.
+        const height = Math.max(px(u, 2), Math.abs(zero - top))
+        ctx.fillRect(
+          left,
+          direction === 1 ? zero - height : zero,
+          width,
+          height,
+        )
+      }),
+    )
+  }
+  bars(series.columns, palette.danger, 1)
+  if (series.hasBaseline) {
+    bars(series.baselineColumns, palette.ink3, -1)
+  }
+  ctx.restore()
 }
 
 // AXES
@@ -331,48 +422,109 @@ const yAxis = (
   palette: () => Palette,
   options: Partial<uPlot.Axis>,
 ): uPlot.Axis => ({
-  size: AXIS_WIDTH,
-  gap: 6,
+  size: AXIS,
+  gap: 8,
   font: axisFont,
-  stroke: () => palette().ink3,
+  stroke: () => palette().ink2,
   grid: { stroke: () => palette().hairline, width: 1 },
   ticks: { show: false },
   ...options,
 })
 
-// THE CHARTS
+const xRange: uPlot.Scale['range'] = (_u, min, max) => [min, max]
 
-const cursor = (): uPlot.Cursor => ({
-  sync: { key: CURSOR_SYNC_KEY },
-  y: false,
+const line = (
+  stroke: () => string,
+  width: number,
+  extra: Partial<uPlot.Series> = {},
+): uPlot.Series => ({
+  stroke,
+  width,
+  spanGaps: false,
   points: { show: false },
-  drag: { x: false, y: false },
+  ...extra,
 })
 
-type Charts = Readonly<{ latency: uPlot; lane: uPlot }>
+// THE CHARTS
+
+type Charts = Readonly<{ top: uPlot; latency: uPlot; errors: uPlot }>
 
 const createCharts = (
-  latencyHost: HTMLElement,
-  laneHost: HTMLElement,
+  hosts: Readonly<{
+    top: HTMLElement
+    latency: HTMLElement
+    errors: HTMLElement
+  }>,
   width: number,
   current: () => Drawing,
   onHover: (index: number | null) => void,
+  onSelect: (u: uPlot) => void,
 ): Charts => {
   const palette = () => current().palette
-  const hover = (u: uPlot) => onHover(u.cursor.idx ?? null)
-  const latency = new uPlot(
+  const series = () => current().series
+  const cursor = (): uPlot.Cursor => ({
+    sync: { key: CURSOR_SYNC_KEY },
+    y: false,
+    points: { show: false },
+    drag: { x: true, y: false, setScale: false },
+  })
+  const common = (u: uPlot) => [
+    drawRange(u, current()),
+    drawLagShading(u, current()),
+  ]
+  const hooks = (
+    draw: ReadonlyArray<(u: uPlot) => void>,
+  ): uPlot.Hooks.Arrays => ({
+    drawAxes: [u => void common(u)],
+    draw: [...draw, u => void drawLiveEdge(u, current())],
+    setCursor: [u => onHover(u.cursor.idx ?? null)],
+    setSelect: [onSelect],
+  })
+
+  const top = new uPlot(
     {
       width,
-      height: LATENCY_HEIGHT,
-      padding: [TITLE_ROOM, LABEL_ROOM, 6, 0],
+      height: TIME_ROOM + TRACK_HEIGHTS.top,
+      padding: [TIME_ROOM, RIGHT, 6, 0],
       legend: { show: false },
       cursor: cursor(),
       scales: {
-        x: { time: false, range: (_u, min, max) => [min, max] },
-        y: {
-          distr: 3,
-          range: () => [...current().series.latencyRange],
-        },
+        x: { time: false, range: xRange },
+        y: { range: (_u, _min, max) => [0, Math.max(1, max * 1.15)] },
+      },
+      axes: [
+        { show: false },
+        yAxis(palette, {
+          space: 28,
+          values: (_u, values) =>
+            values.map(value => loadText(series(), value)),
+        }),
+      ],
+      series: [
+        {},
+        line(() => palette().ink2, 1.25, { dash: [2, 3], spanGaps: true }),
+        line(() => palette().ink3, 1.25),
+        line(() => palette().ink, 1.5),
+      ],
+      hooks: hooks([
+        u => drawTopOverlays(u, current()),
+        u => drawTimes(u, current()),
+      ]),
+    },
+    [[], [], [], []],
+    hosts.top,
+  )
+
+  const latency = new uPlot(
+    {
+      width,
+      height: TRACK_HEIGHTS.latency,
+      padding: [8, RIGHT, 6, 0],
+      legend: { show: false },
+      cursor: cursor(),
+      scales: {
+        x: { time: false, range: xRange },
+        y: { distr: 3, range: () => [...series().latencyRange] },
       },
       axes: [
         { show: false },
@@ -381,104 +533,71 @@ const createCharts = (
           // uPlot hides labels between powers of ten on a log axis; keep them.
           filter: (_u, splits) => splits,
           values: (_u, values) =>
-            values.map(value =>
-              value === null ? '' : Format.text(Format.latency(value)),
-            ),
+            values.map(value => (value === null ? '' : latencyText(value))),
         }),
       ],
       series: [
         {},
-        {
-          stroke: () => palette().ink2,
-          width: 1.25,
-          spanGaps: false,
-          points: { show: false },
-        },
-        {
-          stroke: () => palette().ink,
-          width: 1.75,
-          spanGaps: false,
-          points: { show: false },
-        },
+        line(() => palette().ink2, 1.1, { show: true }),
+        line(() => palette().ink3, 1.25),
+        line(() => palette().ink, 1.75),
       ],
       hooks: {
+        ...hooks([u => drawLatencyOverlays(u, current())]),
         // drawAxes runs after the grid and before the lines, so the
-        // heatmap sits between them.
+        // heatmap and the gap sit between them.
         drawAxes: [
+          u => void common(u),
           u => drawHeatmap(u, current()),
-          u => drawLagShading(u, current()),
+          u => drawGap(u, current()),
         ],
-        draw: [
-          u => drawLatencyOverlays(u, current()),
-          u => drawLiveEdge(u, current()),
-        ],
-        setCursor: [hover],
       },
     },
-    [[], [], []],
-    latencyHost,
+    [[], [], [], []],
+    hosts.latency,
   )
-  const lane = new uPlot(
+
+  const errors = new uPlot(
     {
       width,
-      height: LANE_HEIGHT,
-      padding: [TITLE_ROOM, LABEL_ROOM, 6, 0],
+      height: TRACK_HEIGHTS.errors + X_AXIS_ROOM,
+      padding: [6, RIGHT, 0, 0],
       legend: { show: false },
       cursor: cursor(),
       scales: {
-        x: { time: false, range: (_u, min, max) => [min, max] },
-        y: { range: (_u, _min, max) => [0, Math.max(1, max * 1.15)] },
+        x: { time: false, range: xRange },
+        y: {
+          range: () => {
+            const most = series().mostErrors
+            return series().hasBaseline ? [-most, most] : [0, most]
+          },
+        },
       },
       axes: [
         {
           font: axisFont,
-          stroke: () => palette().ink3,
+          stroke: () => palette().ink2,
           grid: { show: false },
           ticks: { show: false },
-          size: 28,
-          gap: 4,
-          space: 64,
+          size: X_AXIS_ROOM,
+          gap: 6,
+          space: 72,
           incrs: [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600],
           values: (_u, values) => values.map(Format.clock),
         },
-        yAxis(palette, {
-          space: 32,
-          values: (_u, values) =>
-            values.map(value => loadText(current().series, value)),
-        }),
+        yAxis(palette, { grid: { show: false }, values: () => [] }),
       ],
-      series: [
-        {},
-        {
-          stroke: () => palette().ink3,
-          width: 1.25,
-          dash: [4, 4],
-          spanGaps: true,
-          points: { show: false },
-        },
-        {
-          stroke: () => palette().ink,
-          width: 1.5,
-          spanGaps: false,
-          points: { show: false },
-        },
-      ],
-      hooks: {
-        drawClear: [u => drawLagShading(u, current())],
-        draw: [
-          u => drawLaneOverlays(u, current()),
-          u => drawLiveEdge(u, current()),
-        ],
-        setCursor: [hover],
-      },
+      series: [{}],
+      hooks: hooks([u => drawErrors(u, current())]),
     },
-    [[], [], []],
-    laneHost,
+    [[]],
+    hosts.errors,
   )
-  return { latency, lane }
+
+  return { top, latency, errors }
 }
 
-/** "00:42  p50 41.2 ms  p99 212 ms  196/s  2 errors" for the hovered second. */
+/** "00:42   p95 212 ms   p50 41.2 ms   196 req/s   2 errors" for the hovered second. */
 const readoutText = (series: TimelineSeries, index: number | null): string =>
   index === null || index === 0
     ? ''
@@ -486,59 +605,105 @@ const readoutText = (series: TimelineSeries, index: number | null): string =>
         onNone: () => '',
         onSome: column =>
           [
-            Format.clock(index),
-            column.p50 === null
-              ? ''
-              : `p50 ${Format.text(Format.latency(column.p50))}`,
-            column.p99 === null
-              ? ''
-              : `p99 ${Format.text(Format.latency(column.p99))}`,
-            `${Format.rate(column.requests).value} req/s`,
-            column.errors === 0
-              ? 'no errors'
-              : `${Format.grouped(column.errors)} ${column.errors === 1 ? 'error' : 'errors'}`,
+            Format.clock(index - 1),
+            column.p95 === null ? '' : `p95 ${latencyText(column.p95)}`,
+            column.p50 === null ? '' : `p50 ${latencyText(column.p50)}`,
+            `${Format.text(Format.rate(column.requests))}`,
+            `${Format.grouped(column.errors)} ${column.errors === 1 ? 'error' : 'errors'}`,
             column.lagged ? 'Mantix overloaded' : '',
           ]
             .filter(part => part !== '')
             .join('   '),
       })
 
+/** Seconds [from, to) covered by a drag, from the chart's selection box. */
+const selectedSeconds = (
+  u: uPlot,
+  length: number,
+): Option.Option<{ from: number; to: number }> => {
+  const { left, width } = u.select
+  if (width < 4) {
+    return Option.none()
+  }
+  const clamp = (t: number) => Math.min(length, Math.max(0, t))
+  const from = clamp(Math.floor(u.posToVal(left, 'x')))
+  const to = clamp(Math.ceil(u.posToVal(left + width, 'x')))
+  return to > from ? Option.some({ from, to }) : Option.none()
+}
+
+/** What the tracks show before any data arrives. */
+const EMPTY_INPUT: TimelineInput = {
+  duration: 60,
+  topTrack: 'Load',
+  plan: [],
+  isRate: true,
+  current: [],
+  maybeBaseline: Option.none(),
+  isLive: false,
+  maybeLimit: Option.none(),
+  maybeRange: Option.none(),
+}
+
 /** Build the DOM, charts and listeners for one timeline host element. */
 const createTimeline = (
   element: HTMLElement,
-): TimelineHandle & {
-  destroy: () => void
-} => {
+  onRange: (range: { from: number; to: number }) => void,
+): TimelineHandle & { destroy: () => void } => {
   const readout = document.createElement('div')
   readout.className = 'timeline-readout'
-  const latencyHost = document.createElement('div')
-  const laneHost = document.createElement('div')
-  element.append(readout, latencyHost, laneHost)
+  const hosts = {
+    top: document.createElement('div'),
+    latency: document.createElement('div'),
+    errors: document.createElement('div'),
+  }
+  hosts.latency.className = 'timeline-track'
+  hosts.errors.className = 'timeline-track'
+  element.append(readout, hosts.top, hosts.latency, hosts.errors)
 
-  let data: TimelineData | undefined
-  let drawing: Drawing = { series: EMPTY_SERIES, palette: readPalette(element) }
+  let input: TimelineInput | undefined
+  let drawing: Drawing = {
+    series: buildSeries(EMPTY_INPUT),
+    palette: readPalette(element),
+  }
   let scheduled = false
   const current = (): Drawing => drawing
 
   const charts = createCharts(
-    latencyHost,
-    laneHost,
-    Math.max(320, element.clientWidth),
+    hosts,
+    Math.max(480, element.clientWidth),
     current,
     index => {
       readout.textContent = readoutText(current().series, index)
     },
+    u => {
+      const length = current().series.x.length - 1
+      Option.map(selectedSeconds(u, length), onRange)
+      // Our own wash draws the range once the Model has it.
+      u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false)
+    },
   )
+  const all = [charts.top, charts.latency, charts.errors]
 
   const draw = () => {
     scheduled = false
-    if (data === undefined) {
+    if (input === undefined) {
       return
     }
-    const series = buildSeries(data)
+    const series = buildSeries(input)
     drawing = { series, palette: readPalette(element) }
-    charts.latency.setData([series.x, series.p50, series.p99])
-    charts.lane.setData([series.x, series.target, series.achieved])
+    charts.top.setData([
+      series.x,
+      series.planned,
+      series.baselineLoad,
+      series.load,
+    ])
+    charts.latency.setData([
+      series.x,
+      series.hasBaseline ? series.x.map(() => null) : series.p50,
+      series.baselineP95,
+      series.p95,
+    ])
+    charts.errors.setData([series.x])
   }
 
   // Coalesce bursts (a reconnect replays every Second) into one frame.
@@ -550,28 +715,22 @@ const createTimeline = (
   }
 
   const resize = new ResizeObserver(() => {
-    const width = Math.max(320, element.clientWidth)
-    charts.latency.setSize({ width, height: LATENCY_HEIGHT })
-    charts.lane.setSize({ width, height: LANE_HEIGHT })
+    const width = Math.max(480, element.clientWidth)
+    all.forEach(chart => chart.setSize({ width, height: chart.height }))
   })
   resize.observe(element)
 
-  // Repaint with the other palette when the system theme flips, and once
-  // the web fonts have loaded so labels use Geist.
-  const scheme = matchMedia('(prefers-color-scheme: dark)')
-  scheme.addEventListener('change', schedule)
+  // Repaint once the web fonts have loaded, so labels use Geist.
   void document.fonts.ready.then(schedule)
 
   return {
     update: next => {
-      data = next
+      input = next
       schedule()
     },
     destroy: () => {
-      scheme.removeEventListener('change', schedule)
       resize.disconnect()
-      charts.latency.destroy()
-      charts.lane.destroy()
+      all.forEach(chart => chart.destroy())
       element.replaceChildren()
     },
   }
@@ -584,9 +743,14 @@ class ChartError extends Data.TaggedError('ChartError')<{
 type MountTimelineMessage =
   | typeof Message.SucceededMountTimeline.Type
   | typeof Message.FailedMountTimeline.Type
+  | typeof Message.SelectedRange.Type
 
 export const MountTimeline = Mount.defineStream('MountTimeline', {
-  messages: [Message.SucceededMountTimeline, Message.FailedMountTimeline],
+  messages: [
+    Message.SucceededMountTimeline,
+    Message.FailedMountTimeline,
+    Message.SelectedRange,
+  ],
   execute: ({ element }) =>
     Stream.callback<MountTimelineMessage>(queue =>
       Effect.gen(function* () {
@@ -602,7 +766,9 @@ export const MountTimeline = Mount.defineStream('MountTimeline', {
         yield* Effect.acquireRelease(
           Effect.try({
             try: () => {
-              const timeline = createTimeline(element)
+              const timeline = createTimeline(element, range =>
+                Queue.offerUnsafe(queue, Message.SelectedRange(range)),
+              )
               registerTimeline(TIMELINE_HOST_ID, timeline)
               return timeline
             },

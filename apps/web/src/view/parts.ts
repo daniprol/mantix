@@ -1,5 +1,5 @@
 /**
- * Small view pieces used across screens: buttons, quantities, chips.
+ * Small view pieces used across pages: buttons, links, quantities.
  *
  * Foldkit idea: a view is a plain function from data to Html. `h` is the
  * typed Html builder; passing it down keeps every helper tied to our
@@ -10,22 +10,28 @@ import type { Html, HtmlBuilder } from 'foldkit/html'
 import type * as Format from '../domain/format.ts'
 import type { Message } from '../message.ts'
 
-const primaryButtonClass =
+const primaryClass =
   'inline-flex h-8 items-center gap-2 rounded-md bg-ink px-3.5 text-[13px] font-medium text-paper transition-opacity duration-150 ease-out hover:opacity-85 disabled:cursor-default disabled:opacity-50'
 
-const quietButtonClass =
-  'inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[13px] text-ink-2 transition-colors duration-150 ease-out hover:bg-wash hover:text-ink'
+const secondaryClass =
+  'inline-flex h-8 items-center gap-2 rounded-md border border-hairline bg-paper px-3.5 text-[13px] text-ink transition-colors duration-150 ease-out hover:bg-wash disabled:cursor-default disabled:opacity-50'
 
-export const primaryButton = (
+export type Emphasis = 'Primary' | 'Secondary'
+
+const buttonClass = (emphasis: Emphasis) =>
+  emphasis === 'Primary' ? primaryClass : secondaryClass
+
+export const button = (
   label: string,
   message: Message,
+  emphasis: Emphasis,
   h: HtmlBuilder<Message>,
   options: Readonly<{ isDisabled?: boolean; hint?: string }> = {},
 ): Html =>
   h.button(
     [
       h.Type('button'),
-      h.Class(primaryButtonClass),
+      h.Class(buttonClass(emphasis)),
       h.OnClick(message),
       h.Disabled(options.isDisabled === true),
     ],
@@ -42,66 +48,89 @@ export const primaryButton = (
     ],
   )
 
-export const quietButton = (
+/** A link that looks like a button: navigation, not an action. */
+export const buttonLink = (
   label: string,
-  message: Message,
+  href: string,
+  emphasis: Emphasis,
   h: HtmlBuilder<Message>,
-): Html =>
-  h.button(
-    [h.Type('button'), h.Class(quietButtonClass), h.OnClick(message)],
-    [label],
-  )
+): Html => h.a([h.Href(href), h.Class(buttonClass(emphasis))], [label])
 
 /** A number with its unit set smaller and muted: 212 ms. */
 export const quantity = (
   { value, unit }: Format.Quantity,
   h: HtmlBuilder<Message>,
-  unitClass = 'text-ink-3',
+  unitClass = 'text-ink-2',
 ): Html =>
   h.span(
     [h.Class('num whitespace-nowrap')],
     [
       value,
-      h.span(
-        [
-          h.Class(
-            `${unit.startsWith('/') || unit === '%' ? '' : 'ml-[0.2em] '}text-[0.72em] ${unitClass}`,
-          ),
-        ],
-        [unit],
-      ),
+      h.span([h.Class(`ml-[0.25em] text-[0.72em] ${unitClass}`)], [unit]),
     ],
   )
 
-/** A quiet pill for thresholds: "p99 < 250ms", optionally with the result. */
-export const chip = (
-  expression: string,
+/** A muted placeholder where a number is missing or not meaningful. */
+export const missing = (text: string, h: HtmlBuilder<Message>): Html =>
+  h.span([h.Class('num text-ink-3')], [text])
+
+/** "GET /cart/:id": the method small and gray, the route in full. */
+export const endpointName = (
+  endpoint: string,
   h: HtmlBuilder<Message>,
-  result: Readonly<{ actual: string; failed: boolean }> | undefined = undefined,
+): Html => {
+  const [method, ...rest] = endpoint.split(' ')
+  return rest.length === 0
+    ? h.span([h.Class('num truncate text-ink')], [endpoint])
+    : h.span(
+        [h.Class('flex min-w-0 items-baseline gap-2.5')],
+        [
+          h.span(
+            [h.Class('num w-9 shrink-0 text-[11px] text-ink-2')],
+            [method ?? ''],
+          ),
+          h.span([h.Class('num truncate text-ink')], [rest.join(' ')]),
+        ],
+      )
+}
+
+/** A small segmented control: one choice pressed at a time. */
+export const segmented = (
+  label: string,
+  options: ReadonlyArray<
+    Readonly<{
+      key: string
+      text: string
+      isPressed: boolean
+      message: Message
+    }>
+  >,
+  h: HtmlBuilder<Message>,
 ): Html =>
-  h.span(
+  h.div(
     [
       h.Class(
-        `num inline-flex h-6 items-center gap-2 rounded-full border px-2.5 text-[12px] ${
-          result?.failed === true
-            ? 'border-danger/40 bg-danger-wash text-danger'
-            : 'border-hairline text-ink-2'
-        }`,
+        'inline-flex h-8 rounded-md border border-hairline bg-paper p-0.5',
       ),
+      h.Role('group'),
+      h.AriaLabel(label),
     ],
-    [
-      expression,
-      ...(result === undefined
-        ? []
-        : [
-            h.span(
-              [h.Class(result.failed ? 'font-medium text-danger' : 'text-ink')],
-              [result.actual],
-            ),
-          ]),
-    ],
+    options.map(option =>
+      h.keyed('button')(
+        option.key,
+        [
+          h.Type('button'),
+          h.AriaPressed(String(option.isPressed)),
+          h.OnClick(option.message),
+          h.Class(
+            `num rounded-[4px] px-3 text-[12px] transition-colors duration-150 ease-out ${
+              option.isPressed
+                ? 'bg-wash text-ink'
+                : 'text-ink-2 hover:text-ink'
+            }`,
+          ),
+        ],
+        [option.text],
+      ),
+    ),
   )
-
-/** A small label above a figure or a section. */
-export const label = (text: string, h: HtmlBuilder<Message>): Html =>
-  h.div([h.Class('text-[12px] text-ink-3')], [text])
