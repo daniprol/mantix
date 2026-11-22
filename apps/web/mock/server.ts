@@ -190,6 +190,9 @@ const RunsHandlers = HttpApiBuilder.group(MantixApi, 'runs', handlers =>
     .handle('get', ({ params }) =>
       Effect.map(findRun(params.id), run => run.info),
     )
+    .handle('seconds', ({ params }) =>
+      Effect.map(findRun(params.id), run => [...run.seconds]),
+    )
     .handle('control', ({ params, payload }) =>
       Effect.gen(function* () {
         const run = yield* findRun(params.id)
