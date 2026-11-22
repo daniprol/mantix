@@ -9,7 +9,7 @@
  * same results on /api/dev/events. Start a full run from the dashboard
  * whenever you're ready; it uses the latest code.
  */
-import { Console, Effect, Layer, Queue, Result, Stream } from 'effect'
+import { Console, Effect, Layer, Option, Queue, Result, Stream } from 'effect'
 import { Argument, Command, Flag } from 'effect/cli'
 import { watch } from 'node:fs'
 import { dirname, extname, resolve } from 'node:path'
@@ -21,6 +21,7 @@ import { DevEvents } from './DevEvents.ts'
 import { probeReport } from './DevReport.ts'
 import { enableFreshImports, freshUrl } from './FreshImport.ts'
 import { CliExit, loadTest } from './RunCommand.ts'
+import { labelFlag } from './RunContext.ts'
 import { RunStore, historyFlags } from './RunStore.ts'
 import { Runs } from './Runs.ts'
 import { findWebRoot, serverLayer } from './Server.ts'
@@ -126,6 +127,7 @@ export const dev = Command.make(
       Flag.withDescription('Port for the dashboard'),
       Flag.withDefault(4100),
     ),
+    label: labelFlag,
     ...historyFlags,
   },
   Effect.fn('dev')(
@@ -145,7 +147,9 @@ export const dev = Command.make(
       // Both the server and the watcher use these, so they are provided
       // once: Layer.provide builds each service a single time.
       const services = Layer.mergeAll(
-        Runs.layer(test, args.file),
+        Runs.layer(test, args.file, {
+          label: Option.getOrUndefined(args.label),
+        }),
         DevEvents.layer,
       ).pipe(
         // Runs started from the dev dashboard are saved like any other.

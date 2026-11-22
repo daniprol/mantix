@@ -142,10 +142,10 @@ describe('mantix ui server', () => {
 
 describe('run history', () => {
   /** A server for the tiny test, saving its history to `file`. */
-  const startServer = (file: string) => {
+  const startServer = (file: string, label?: string) => {
     const web = HttpRouter.toWebHandler(
       ApiRoutes.pipe(
-        Layer.provide([Runs.layer(test, 'tiny.ts'), DevEvents.idle]),
+        Layer.provide([Runs.layer(test, 'tiny.ts', { label }), DevEvents.idle]),
         Layer.provide(RunStore.layer(file)),
         Layer.provide(HttpServer.layerServices),
       ),
@@ -161,8 +161,8 @@ describe('run history', () => {
     const folder = mkdtempSync(join(tmpdir(), 'mantix-server-'))
     const file = join(folder, 'history.db')
     try {
-      // First server: run the test to the end.
-      const first = startServer(file)
+      // First server: run the test to the end, labelled like `--label`.
+      const first = startServer(file, 'nightly')
       const started = await first.call('/api/runs', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -179,6 +179,18 @@ describe('run history', () => {
       )
       expect(list.map(r => r.id)).toEqual([run.id])
       expect(list[0]!.status).toBe('finished')
+
+      // Each run carries its context, and the list can filter by it.
+      const context = list[0]!.context!
+      expect(context.label).toBe('nightly')
+      expect(context.mantixVersion).toMatch(/^\d+\.\d+\.\d+/)
+      const count = async (query: string) =>
+        ((await (await second.call(`/api/runs?${query}`)).json()) as []).length
+      expect(await count('label=nightly')).toBe(1)
+      expect(await count('label=other')).toBe(0)
+      expect(
+        await count(`project=${encodeURIComponent(context.project)}`),
+      ).toBe(1)
 
       const seconds = Schema.decodeUnknownSync(Schema.Array(Second))(
         await (await second.call(`/api/runs/${run.id}/seconds`)).json(),

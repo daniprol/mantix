@@ -13,9 +13,10 @@ import { Command } from 'effect/cli'
 import { NodeRuntime, NodeServices } from '@effect/platform-node'
 
 import { mantix } from './Cli.ts'
+import { MANTIX_VERSION } from './Version.ts'
 
 mantix.pipe(
-  Command.run({ version: '0.0.0' }),
+  Command.run({ version: MANTIX_VERSION }),
   Effect.provide(NodeServices.layer),
   NodeRuntime.runMain,
 )

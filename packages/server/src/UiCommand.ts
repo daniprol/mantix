@@ -4,13 +4,14 @@
  * One process runs both the HTTP server and the engine. Press Start in the
  * browser and the run streams to the page one Second at a time.
  */
-import { Console, Effect, Layer } from 'effect'
+import { Console, Effect, Layer, Option } from 'effect'
 import { Argument, Command, Flag } from 'effect/cli'
 
 import { testInfo } from '@mantix/core'
 
 import { DevEvents } from './DevEvents.ts'
 import { CliExit, loadTest } from './RunCommand.ts'
+import { labelFlag } from './RunContext.ts'
 import { RunStore, historyFlags } from './RunStore.ts'
 import { Runs } from './Runs.ts'
 import { findWebRoot, serverLayer } from './Server.ts'
@@ -38,6 +39,7 @@ export const ui = Command.make(
       Flag.withDescription('Port for the dashboard'),
       Flag.withDefault(4100),
     ),
+    label: labelFlag,
     ...historyFlags,
   },
   Effect.fn('ui')(
@@ -57,7 +59,12 @@ export const ui = Command.make(
       const url = `http://localhost:${args.port}`
 
       const app = serverLayer({ port: args.port, webRoot }).pipe(
-        Layer.provide([Runs.layer(test, args.file), DevEvents.idle]),
+        Layer.provide([
+          Runs.layer(test, args.file, {
+            label: Option.getOrUndefined(args.label),
+          }),
+          DevEvents.idle,
+        ]),
         // Every run is saved, so earlier runs can be opened after a restart.
         Layer.provide(
           RunStore.forCli({ enabled: args.history, file: args.historyFile }),

@@ -22,7 +22,8 @@ import {
 } from '@mantix/core'
 
 import { startRecordedRun } from './History.ts'
-import { passed, secondLine, summaryReport } from './Report.ts'
+import { contextLine, passed, secondLine, summaryReport } from './Report.ts'
+import { labelFlag } from './RunContext.ts'
 import { RunStore, historyFlags } from './RunStore.ts'
 
 /**
@@ -157,6 +158,7 @@ const run = Command.make(
       Flag.withDescription('Only print the final summary'),
       Flag.withDefault(false),
     ),
+    label: labelFlag,
     ...historyFlags,
   },
   Effect.fn('run')(function* (args) {
@@ -173,14 +175,22 @@ const run = Command.make(
           handle = yield* startRecordedRun(test, {
             file: args.file,
             overrides,
+            label: Option.getOrUndefined(args.label),
           }).pipe(
             Effect.mapError(e => new CliExit({ code: 1, message: e.message })),
           )
           const info = yield* handle.info
           const models = new Set(info.plan.map(s => s.plan.model))
           const model = models.size === 1 ? [...models][0]! : 'mixed'
+          // e.g. "mantix · checkout · 30 s planned · main @ a1b2c3d"
+          const header = [
+            'mantix',
+            info.testName,
+            `${info.duration} s planned`,
+            contextLine(info.context),
+          ].filter(part => part !== '')
           yield* Console.log(
-            `\n  mantix · ${info.testName} · ${info.duration} s planned${args.quiet ? '' : '\n'}`,
+            `\n  ${header.join(' · ')}${args.quiet ? '' : '\n'}`,
           )
           if (!args.quiet) {
             // `events` replays and then follows the run, ending with it.

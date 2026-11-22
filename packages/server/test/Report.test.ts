@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { Histogram, type RunInfo, type Second, summarizeRun } from '@mantix/api'
 
-import { formatMs, passed, secondLine, summaryReport } from '../src/Report.ts'
+import {
+  contextLine,
+  formatMs,
+  passed,
+  secondLine,
+  summaryReport,
+} from '../src/Report.ts'
 
 // styleText adds no colour when output is not a terminal, as in tests.
 const second: Second = {
@@ -77,5 +83,31 @@ describe('report', () => {
     expect(report).toContain('✗ FAILED')
     expect(report).toContain('2 iterations dropped')
     expect(passed(run)).toBe(false)
+  })
+})
+
+describe('contextLine', () => {
+  const base = {
+    project: 'shop',
+    mantixVersion: '1.0.0',
+    machine: { hostname: 'ci', os: 'linux x64', node: '22.19.0' },
+  }
+
+  it('shows the branch, short commit, dirty flag and label', () => {
+    expect(
+      contextLine({
+        ...base,
+        git: { commit: 'a1b2c3d4e5f6', branch: 'main', dirty: true },
+        label: 'v2.3 on staging',
+      }),
+    ).toBe('main @ a1b2c3d (dirty) · v2.3 on staging')
+  })
+
+  it('shows only the commit on a detached HEAD, and nothing without git', () => {
+    expect(
+      contextLine({ ...base, git: { commit: 'a1b2c3d4e5f6', dirty: false } }),
+    ).toBe('a1b2c3d')
+    expect(contextLine(base)).toBe('')
+    expect(contextLine(undefined)).toBe('')
   })
 })

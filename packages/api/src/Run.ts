@@ -91,6 +91,40 @@ export const RunStatus = Schema.Literals([
 ])
 export type RunStatus = typeof RunStatus.Type
 
+/**
+ * Where a run came from, so runs can be told apart and compared later:
+ * "main @ a1b2c3d vs feature @ d4e5f6a", or the same test in two projects
+ * that share one history file. The CLI gathers it when a run starts.
+ */
+export const RunContext = Schema.Struct({
+  /** The project's name: its package.json `name`, else its folder name. */
+  project: Schema.String,
+  /** Absent when Mantix ran outside a git repository. */
+  git: Schema.optionalKey(
+    Schema.Struct({
+      /** The full SHA of HEAD. */
+      commit: Schema.String,
+      /** Absent on a detached HEAD. */
+      branch: Schema.optionalKey(Schema.String),
+      /** True when the working tree had uncommitted changes. */
+      dirty: Schema.Boolean,
+    }),
+  ),
+  /** The version of Mantix that ran the test. */
+  mantixVersion: Schema.String,
+  /** Enough to answer "was this the same machine?", nothing personal. */
+  machine: Schema.Struct({
+    hostname: Schema.String,
+    /** Operating system and CPU, e.g. "linux x64". */
+    os: Schema.String,
+    /** Node.js version, e.g. "22.19.0". */
+    node: Schema.String,
+  }),
+  /** Free text from `--label`, e.g. "v2.3 on staging". */
+  label: Schema.optionalKey(Schema.String),
+})
+export type RunContext = typeof RunContext.Type
+
 export const RunInfo = Schema.Struct({
   id: Schema.String,
   testName: Schema.String,
@@ -111,6 +145,11 @@ export const RunInfo = Schema.Struct({
   journal: Schema.Array(JournalEntry),
   /** Set when status is "crashed". */
   error: Schema.optionalKey(Schema.String),
+  /**
+   * Project, git commit, label... Optional: runs saved before Mantix
+   * recorded it, and runs started straight from the engine, have none.
+   */
+  context: Schema.optionalKey(RunContext),
 })
 export type RunInfo = typeof RunInfo.Type
 

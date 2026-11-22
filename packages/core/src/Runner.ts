@@ -59,6 +59,7 @@ import {
   InvalidControl,
   type JournalEntry,
   type LoadPlan,
+  type RunContext,
   type RunEvent,
   type RunInfo,
   type RunOverrides,
@@ -100,6 +101,12 @@ export interface RunOptions {
   readonly overrides?: RunOverrides
   /** A run id; a random one is made when absent. */
   readonly id?: string
+  /**
+   * Where the run came from (project, git, label), copied into its info.
+   * The engine only carries it: the CLI gathers it (see RunContext.ts in
+   * the server), so the engine never touches git or the file system.
+   */
+  readonly context?: RunContext
 }
 
 /** The run as it is (or was, once it has ended). */
@@ -403,6 +410,7 @@ export const startRun = Effect.fn('startRun')(function* (
     plan,
     thresholds: [],
     journal: [],
+    ...(options.context === undefined ? {} : { context: options.context }),
   }
 
   // One SubscriptionRef holds the whole state. Every update is published

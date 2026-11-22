@@ -60,11 +60,18 @@ export class RunsGroup extends HttpApiGroup.make('runs')
       error: RunAlreadyActive,
     }),
     // Runs of the loaded test file, newest first, including runs from
-    // earlier sessions and from `mantix run` (the run history).
+    // earlier sessions and from `mantix run` (the run history). Each run
+    // carries its context (project, git, label) for telling runs apart.
     HttpApiEndpoint.get('list', '/runs', {
       query: {
         /** At most this many runs (default 50). */
         limit: Schema.optional(Schema.FiniteFromString),
+        /** Only runs of this project, e.g. ?project=shop-api */
+        project: Schema.optional(Schema.String),
+        /** Only runs made on this git branch. */
+        branch: Schema.optional(Schema.String),
+        /** Only runs with exactly this label. */
+        label: Schema.optional(Schema.String),
       },
       success: Schema.Array(RunInfo),
     }),
