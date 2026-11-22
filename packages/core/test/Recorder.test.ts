@@ -73,4 +73,14 @@ describe('Recorder', () => {
     expect(errorSamples).toHaveLength(5)
     expect(new Set(errorSamples.map(s => s.message)).size).toBe(5)
   })
+
+  it('keeps the latest iteration start of the second', () => {
+    const recorder = new Recorder()
+    recorder.iterationStarted(3)
+    recorder.iterationStarted(40)
+    recorder.iterationStarted(7)
+    expect(recorder.lateStartMs).toBe(40)
+    recorder.snapshot(0, gauges)
+    expect(recorder.lateStartMs).toBe(0)
+  })
 })

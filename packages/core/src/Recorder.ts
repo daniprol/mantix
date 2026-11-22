@@ -7,7 +7,12 @@
  * counters into one immutable `Second` (the data atom, decision D2) and
  * starts the next second from zero.
  */
-import { type ErrorKind, Histogram, type Second } from '@mantix/api'
+import {
+  type ErrorKind,
+  type GeneratorHealth,
+  Histogram,
+  type Second,
+} from '@mantix/api'
 
 /** At most this many example errors are kept per second. */
 const MAX_ERROR_SAMPLES = 5
@@ -54,6 +59,7 @@ export class Recorder {
   private dropped = 0
   private completed = 0
   private failed = 0
+  private lateStart = 0
 
   /**
    * Iterations running right now. Unlike the counters above this is a
@@ -117,9 +123,19 @@ export class Recorder {
     this.dropped++
   }
 
-  iterationStarted(): void {
+  /**
+   * An iteration started, `lateMs` after its scheduled time (open model).
+   * Late starts mean Mantix could not keep up with its own schedule.
+   */
+  iterationStarted(lateMs = 0): void {
     this.started++
     this.inFlight++
+    if (lateMs > this.lateStart) this.lateStart = lateMs
+  }
+
+  /** The latest an iteration started this second, in ms. */
+  get lateStartMs(): number {
+    return this.lateStart
   }
 
   /** An iteration ended. Interrupted iterations count as neither outcome. */
@@ -151,6 +167,7 @@ export class Recorder {
       readonly target: number
       readonly vus: number
       readonly loopLagMs: number
+      readonly generator?: GeneratorHealth
     },
   ): Second {
     const endpoints = [...this.endpoints.entries()]
@@ -174,6 +191,9 @@ export class Recorder {
       inFlight: this.inFlight,
       vus: gauges.vus,
       loopLagMs: gauges.loopLagMs,
+      ...(gauges.generator === undefined
+        ? {}
+        : { generator: gauges.generator }),
       endpoints,
       errorSamples: this.samples,
     }
@@ -187,6 +207,7 @@ export class Recorder {
     this.dropped = 0
     this.completed = 0
     this.failed = 0
+    this.lateStart = 0
     return second
   }
 }

@@ -51,7 +51,6 @@ import {
   Stream,
   SubscriptionRef,
 } from 'effect'
-import { monitorEventLoopDelay } from 'node:perf_hooks'
 
 import {
   type Control,
@@ -75,6 +74,7 @@ import {
 } from '@mantix/api'
 
 import { toSeconds } from './Duration.ts'
+import { GeneratorMonitor } from './Generator.ts'
 import {
   type ClientConfig,
   DEFAULT_TIMEOUT_MS,
@@ -388,9 +388,9 @@ export const startRun = Effect.fn('startRun')(function* (
   const vusByScenario = scenarios.map(() => 0)
   const totals = new Map<string, EndpointSecond>()
 
-  // The event-loop delay histogram tells us if Mantix itself is too busy
-  // to keep its schedule (the "generator" lane on the dashboard).
-  const loopDelay = monitorEventLoopDelay({ resolution: 10 })
+  // Watches Mantix itself: if it is too busy to keep its schedule, the
+  // second is marked untrusted (hatched on the dashboard).
+  const generator = new GeneratorMonitor()
 
   // Steering: the plan plus the journal, read once per change. Plain
   // mutable state like the recorder, because the schedulers read it on
@@ -418,12 +418,12 @@ export const startRun = Effect.fn('startRun')(function* (
   /** Close second `t` and publish it, checking thresholds. */
   const closeSecond = (t: number) =>
     Effect.gen(function* () {
-      const lagMs = loopDelay.max > 0 ? loopDelay.max / 1e6 : 0
-      loopDelay.reset()
+      const { loopLagMs, health } = generator.sample(recorder.lateStartMs)
       const second = recorder.snapshot(t, {
         target: targetFor(t),
         vus: vusByScenario.reduce((a, b) => a + b, 0),
-        loopLagMs: Math.round(lagMs * 10) / 10,
+        loopLagMs,
+        generator: health,
       })
       accumulate(totals, second)
       const next = yield* SubscriptionRef.updateAndGet(state, current => {
@@ -565,8 +565,8 @@ export const startRun = Effect.fn('startRun')(function* (
         Effect.promise(() => a.destroy()),
       )
       yield* Effect.acquireRelease(
-        Effect.sync(() => loopDelay.enable()),
-        () => Effect.sync(() => loopDelay.disable()),
+        Effect.sync(() => generator.start()),
+        () => Effect.sync(() => generator.stop()),
       )
       const start = now()
       runStart = start
