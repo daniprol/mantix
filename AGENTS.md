@@ -44,4 +44,5 @@ pnpm test             # Vitest, all packages
 pnpm format           # oxfmt
 pnpm knip             # unused files, exports and dependencies
 pnpm e2e              # Playwright, in e2e/ (build apps/web first)
+pnpm build            # builds the web app, then the npm package (packages/server/dist)
 ```

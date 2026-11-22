@@ -1,0 +1,12 @@
+{
+  // Used only by `pnpm build` to write the .d.ts files of the npm package.
+  // It also covers the workspace packages that the bundle inlines.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src", "../api/src", "../core/src"]
+}
