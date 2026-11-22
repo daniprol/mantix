@@ -7,28 +7,12 @@
  */
 import { Schema } from 'effect'
 
+import { ErrorKind } from './ErrorKind.ts'
 import { Histogram } from './Histogram.ts'
+import { IterationTrace } from './Trace.ts'
 
-/**
- * Every failure is put into one of these classes, so a bug in your test
- * script never looks like a server failure.
- *
- * - Transport: connection refused, reset, DNS failure...
- * - Timeout: no response within the request timeout.
- * - HttpStatus: the server answered with a status we treat as a failure.
- * - SchemaMismatch: the body did not match the `expect` schema.
- * - CheckFailed: a check written in the test failed.
- * - ScriptError: the test code itself threw (your bug, not the server's).
- */
-export const ErrorKind = Schema.Literals([
-  'Transport',
-  'Timeout',
-  'HttpStatus',
-  'SchemaMismatch',
-  'CheckFailed',
-  'ScriptError',
-])
-export type ErrorKind = typeof ErrorKind.Type
+// The error classes live in their own file; re-exported from here.
+export { ErrorKind } from './ErrorKind.ts'
 
 /** What happened on one endpoint during one second. */
 export const EndpointSecond = Schema.Struct({
@@ -47,14 +31,75 @@ export const EndpointSecond = Schema.Struct({
 })
 export type EndpointSecond = typeof EndpointSecond.Type
 
+/**
+ * Where a response body did not match the `expect` schema: the exact
+ * path, what the schema wanted and what actually arrived.
+ */
+export const SchemaDiff = Schema.Struct({
+  /** The path in the body, e.g. "$.items[3].price". */
+  path: Schema.String,
+  /** What the schema library said, e.g. "Expected number". */
+  expected: Schema.String,
+  /** The value that arrived, as short JSON, e.g. "\"19.99\"". */
+  received: Schema.String,
+  /** Its type: string, number, boolean, null, array, object or missing. */
+  receivedType: Schema.String,
+})
+export type SchemaDiff = typeof SchemaDiff.Type
+
 /** One example of an error, kept so people can see what went wrong. */
 export const ErrorSample = Schema.Struct({
   endpoint: Schema.String,
   kind: ErrorKind,
   /** A short, human readable message. Secrets are never included. */
   message: Schema.String,
+  /**
+   * Errors with the same fingerprint are the same problem (see Errors.ts).
+   * Absent in data recorded before Mantix grouped errors.
+   */
+  fingerprint: Schema.optionalKey(Schema.String),
+  /** For SchemaMismatch: where the body differed from the schema. */
+  diff: Schema.optionalKey(SchemaDiff),
+  /** For ScriptError: the line in the test file that threw, e.g. "checkout.ts:42". */
+  location: Schema.optionalKey(Schema.String),
 })
 export type ErrorSample = typeof ErrorSample.Type
+
+/**
+ * Why a second's numbers should not be trusted. Each one means Mantix
+ * itself (the load generator) was struggling, so slow responses in that
+ * second may be our fault, not the server's.
+ *
+ * - LoopLag: the event loop was blocked for a long stretch.
+ * - LateStarts: iterations started well after their scheduled time.
+ * - Cpu: the Mantix process used (nearly) a whole CPU core.
+ * - Gc: garbage collection paused the process for a long time.
+ */
+export const GeneratorIssue = Schema.Literals([
+  'LoopLag',
+  'LateStarts',
+  'Cpu',
+  'Gc',
+])
+export type GeneratorIssue = typeof GeneratorIssue.Type
+
+/** How the load generator itself was doing during one second. */
+export const GeneratorHealth = Schema.Struct({
+  /** CPU used by the Mantix process, in % of one core (can exceed 100). */
+  cpuPercent: Schema.Finite,
+  /** Time spent paused in garbage collection, in ms. */
+  gcMs: Schema.Finite,
+  /** JavaScript heap in use when the second closed, in MB. */
+  heapMb: Schema.Finite,
+  /**
+   * The latest an iteration started compared to its schedule, in ms
+   * (open model only; 0 in the closed model).
+   */
+  lateStartMs: Schema.Finite,
+  /** Empty when the second can be trusted. */
+  issues: Schema.Array(GeneratorIssue),
+})
+export type GeneratorHealth = typeof GeneratorHealth.Type
 
 export const Second = Schema.Struct({
   /** Whole seconds since the run started: 0 is the first second. */
@@ -81,9 +126,22 @@ export const Second = Schema.Struct({
    * this second should not be trusted.
    */
   loopLagMs: Schema.Finite,
+  /**
+   * The generator's own health, and whether to trust this second. Absent
+   * in data recorded before Mantix measured it.
+   */
+  generator: Schema.optionalKey(GeneratorHealth),
   /** Per-endpoint results. */
   endpoints: Schema.Array(EndpointSecond),
-  /** A few example errors from this second (at most a handful). */
+  /**
+   * A few example errors from this second. Every fingerprint seen this
+   * second has at least one, so a rare error is never pushed out by a
+   * noisy one.
+   */
   errorSamples: Schema.Array(ErrorSample),
+  /** The slowest iteration that finished this second, for the waterfall. */
+  slowest: Schema.optionalKey(IterationTrace),
+  /** How many errors of each fingerprint happened this second. */
+  fingerprints: Schema.optionalKey(Schema.Record(Schema.String, Schema.Finite)),
 })
 export type Second = typeof Second.Type

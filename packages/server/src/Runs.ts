@@ -10,6 +10,9 @@
 import { Context, Effect, Layer, Option, Ref, Scope, Stream } from 'effect'
 
 import {
+  type Control,
+  InvalidControl,
+  type JournalEntry,
   RunAlreadyActive,
   type RunEvent,
   type RunInfo,
@@ -31,8 +34,15 @@ import { RunStore } from './RunStore.ts'
 export class Runs extends Context.Service<
   Runs,
   {
-    /** The test file this server was started with. */
-    readonly test: TestInfo
+    /** The test file as it is now (`mantix dev` reloads it on save). */
+    readonly test: Effect.Effect<TestInfo>
+    /**
+     * Swap in a newly loaded version of the test file. Runs already going
+     * keep the code they started with; the next Start uses the new one.
+     */
+    readonly reload: (
+      test: TestDefinition,
+    ) => Effect.Effect<TestInfo, InvalidTest>
     /** Start a run. Fails if one is still going. */
     readonly start: (
       overrides: RunOverrides,
@@ -40,6 +50,11 @@ export class Runs extends Context.Service<
     /** Runs of this test file, newest first, from the history. */
     readonly list: (limit?: number) => Effect.Effect<ReadonlyArray<RunInfo>>
     readonly get: (id: string) => Effect.Effect<RunInfo, RunNotFound>
+    /** Steer a running run; the control is added to its journal. */
+    readonly control: (
+      id: string,
+      control: Control,
+    ) => Effect.Effect<JournalEntry, RunNotFound | InvalidControl>
     /** Stop a run early and wait until teardown has finished. */
     readonly stop: (id: string) => Effect.Effect<RunInfo, RunNotFound>
     /** Every Second of a run so far. */
@@ -60,7 +75,10 @@ export class Runs extends Context.Service<
       Runs,
       Effect.gen(function* () {
         // Validate the test once, up front, so a typo fails at startup.
-        const info = testInfo(test, file)
+        const current = yield* Ref.make({
+          definition: test,
+          info: testInfo(test, file),
+        })
         const store = yield* RunStore
 
         // The layer's own scope: it closes when the server shuts down
@@ -112,7 +130,8 @@ export class Runs extends Context.Service<
           // Each run gets a child of the server scope, so it keeps running
           // after this request has been answered.
           const runScope = yield* Scope.fork(serverScope)
-          const handle = yield* startRecordedRun(test, {
+          const { definition } = yield* Ref.get(current)
+          const handle = yield* startRecordedRun(definition, {
             file,
             overrides,
           }).pipe(
@@ -123,23 +142,38 @@ export class Runs extends Context.Service<
           return yield* handle.info
         })
 
+        const reload = Effect.fn('Runs.reload')(function* (
+          definition: TestDefinition,
+        ) {
+          const info = yield* Effect.try({
+            try: () => testInfo(definition, file),
+            catch: error =>
+              new InvalidTest({
+                message: error instanceof Error ? error.message : String(error),
+              }),
+          })
+          yield* Ref.set(current, { definition, info })
+          return info
+        })
+
         const list = Effect.fn('Runs.list')(function* (limit?: number) {
           const saved = yield* store
             .list({ file: historyName(file), limit })
             .pipe(Effect.orDie)
           // The history is written once per second; for runs of this
           // session, answer with the in-memory info, which is never behind.
-          const current = yield* Ref.get(handles)
+          const live = yield* Ref.get(handles)
           return yield* Effect.forEach(saved, run =>
             Option.match(
-              Option.fromNullishOr(current.find(h => h.id === run.id)),
+              Option.fromNullishOr(live.find(h => h.id === run.id)),
               { onNone: () => Effect.succeed(run), onSome: h => h.info },
             ),
           )
         })
 
         return Runs.of({
-          test: info,
+          test: Effect.map(Ref.get(current), c => c.info),
+          reload,
           start,
           list,
           get: id =>
@@ -147,6 +181,18 @@ export class Runs extends Context.Service<
               found._tag === 'Live'
                 ? found.handle.info
                 : Effect.succeed(found.run),
+            ),
+          // Only a run of this server can be steered. A saved run is over,
+          // which is the same answer the engine gives for an ended run.
+          control: (id, control) =>
+            Effect.flatMap(find(id), found =>
+              found._tag === 'Live'
+                ? found.handle.control(control)
+                : Effect.fail(
+                    new InvalidControl({
+                      message: 'The run has already ended.',
+                    }),
+                  ),
             ),
           // A saved run that is not live is already over: nothing to stop.
           stop: id =>

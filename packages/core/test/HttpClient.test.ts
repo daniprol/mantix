@@ -93,7 +93,7 @@ describe('http client', () => {
       statuses: { '503': 1 },
       errors: { HttpStatus: 1 },
     })
-    expect(s.errorSamples[0]).toEqual({
+    expect(s.errorSamples[0]).toMatchObject({
       endpoint: 'GET /status/503',
       kind: 'HttpStatus',
       message: '503 Service Unavailable',
@@ -143,6 +143,13 @@ describe('http client', () => {
     const s = second()
     expect(s.endpoints[0]!.errors).toEqual({ SchemaMismatch: 1 })
     expect(s.errorSamples[0]!.message).toMatch(/^\$\.price: /)
+    // The diff says where, what was expected, and what arrived.
+    expect(s.errorSamples[0]!.diff).toMatchObject({
+      path: '$.price',
+      received: '"1.00"',
+      receivedType: 'string',
+    })
+    expect(s.fingerprints).toEqual({ [s.errorSamples[0]!.fingerprint!]: 1 })
     // Never leaks header values into samples.
     expect(JSON.stringify(s)).not.toContain('secret-token')
     // validateSample: 0 skips validation.
@@ -153,6 +160,24 @@ describe('http client', () => {
       validateSample: 0,
     })
     expect(skipped.status).toBe(200)
+  })
+
+  it('traces each request of an iteration, with phases', async () => {
+    const timing = makeTiming(undefined, now())
+    const http = makeHttp(fresh(), timing, undefined)
+    await http.get('/wait')
+    await rejection(http.get('/status/503'))
+    const [first, second] = timing.spans
+    expect(first).toMatchObject({ endpoint: 'GET /wait', status: 200 })
+    expect(first!.duration).toBeGreaterThanOrEqual(45)
+    // Most of /wait is the server thinking: time to first byte.
+    expect(first!.phases!.waiting).toBeGreaterThanOrEqual(40)
+    expect(second).toMatchObject({ status: 503, error: 'HttpStatus' })
+    expect(second!.start).toBeGreaterThanOrEqual(first!.duration)
+    // Setup and teardown (no start time) are not traced.
+    const untraced = makeTiming()
+    await makeHttp(fresh(), untraced, undefined).get('/wait')
+    expect(untraced.spans).toEqual([])
   })
 
   it('cancels without recording when the signal aborts', async () => {

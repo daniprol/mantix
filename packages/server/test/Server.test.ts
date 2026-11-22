@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { RunInfo, Second, TestInfo } from '@mantix/api'
 import { type TestDefinition, rate, scenario } from '@mantix/core'
 
+import { DevEvents } from '../src/DevEvents.ts'
 import { RunStore } from '../src/RunStore.ts'
 import { Runs } from '../src/Runs.ts'
 import { ApiRoutes } from '../src/Server.ts'
@@ -41,7 +42,7 @@ beforeAll(async () => {
   // we can call it without opening a port.
   ;({ handler, dispose } = HttpRouter.toWebHandler(
     ApiRoutes.pipe(
-      Layer.provide(Runs.layer(test, 'tiny.ts')),
+      Layer.provide([Runs.layer(test, 'tiny.ts'), DevEvents.idle]),
       Layer.provide(RunStore.memory),
       Layer.provide(HttpServer.layerServices),
     ),
@@ -100,6 +101,33 @@ describe('mantix ui server', () => {
     expect(list[0]!.thresholds[0]!.passed).toBe(true)
   }, 15_000)
 
+  it('steers a run through the controls endpoint', async () => {
+    const run = await asRun(await post('/api/runs', { duration: 30 }))
+    const pinned = await post(`/api/runs/${run.id}/controls`, {
+      _tag: 'Pin',
+      note: 'deploy started',
+    })
+    expect(pinned.status).toBe(200)
+    expect(await pinned.json()).toMatchObject({
+      seq: 1,
+      control: { _tag: 'Pin', note: 'deploy started' },
+    })
+    // A control that does not fit the run's state is refused with a reason.
+    const resume = await post(`/api/runs/${run.id}/controls`, {
+      _tag: 'Resume',
+    })
+    expect(resume.status).toBe(409)
+    expect(await resume.json()).toMatchObject({
+      message: 'The run is not paused.',
+    })
+    // A typo in the payload is a 400 from the schema.
+    const bad = await post(`/api/runs/${run.id}/controls`, { _tag: 'Faster' })
+    expect(bad.status).toBe(400)
+
+    const stopped = await asRun(await post(`/api/runs/${run.id}/stop`))
+    expect(stopped.journal.map(e => e.control._tag)).toEqual(['Pin'])
+  }, 15_000)
+
   it('stops a run early', async () => {
     const run = await asRun(await post('/api/runs', { duration: 30 }))
     const stopped = await asRun(await post(`/api/runs/${run.id}/stop`))
@@ -117,7 +145,7 @@ describe('run history', () => {
   const startServer = (file: string) => {
     const web = HttpRouter.toWebHandler(
       ApiRoutes.pipe(
-        Layer.provide(Runs.layer(test, 'tiny.ts')),
+        Layer.provide([Runs.layer(test, 'tiny.ts'), DevEvents.idle]),
         Layer.provide(RunStore.layer(file)),
         Layer.provide(HttpServer.layerServices),
       ),

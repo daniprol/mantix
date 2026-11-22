@@ -263,9 +263,19 @@ const markInterruptedRuns = (db: DatabaseSync): void => {
 
 // Schemas turn JSON text into typed values (and back), checking it on the
 // way in, so a hand-edited or corrupt row fails loudly instead of quietly.
-const decodeInfo = Schema.decodeUnknownSync(
-  Schema.fromJsonString(RunInfoSchema),
-)
+const decodeRunInfo = Schema.decodeUnknownSync(RunInfoSchema)
+/**
+ * Rows saved before runs had a journal (steering) lack the field: those
+ * runs were never steered, so an empty journal is exactly right.
+ */
+const decodeInfo = (json: string): RunInfo => {
+  const raw: unknown = JSON.parse(json)
+  return decodeRunInfo(
+    typeof raw === 'object' && raw !== null && !('journal' in raw)
+      ? { ...raw, journal: [] }
+      : raw,
+  )
+}
 const encodeInfo = Schema.encodeSync(Schema.fromJsonString(RunInfoSchema))
 const decodeSecond = Schema.decodeUnknownSync(Schema.fromJsonString(Second))
 const encodeSecond = Schema.encodeSync(Schema.fromJsonString(Second))

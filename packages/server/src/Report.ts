@@ -9,6 +9,7 @@
 import { styleText } from 'node:util'
 
 import {
+  type GeneratorIssue,
   Histogram,
   type RunInfo,
   type RunSummary,
@@ -82,11 +83,25 @@ export const secondLine = (
     parts.push(paint('yellow', `dropped ${integer.format(second.dropped)}`))
   }
   // The generator itself was too busy: these numbers are less trustworthy.
-  if (second.loopLagMs >= 50) {
+  const issues = second.generator?.issues ?? []
+  if (issues.length > 0) {
+    parts.push(
+      paint('yellow', `untrusted: ${issues.map(issueLabel).join(', ')}`),
+    )
+  } else if (second.loopLagMs >= 50) {
     parts.push(paint('yellow', `loop lag ${second.loopLagMs.toFixed(0)} ms`))
   }
   return parts.join('   ')
 }
+
+/** Short words for why a second is not trusted. */
+const issueLabel = (issue: GeneratorIssue): string =>
+  ({
+    LoopLag: 'loop lag',
+    LateStarts: 'late starts',
+    Cpu: 'cpu',
+    Gc: 'gc',
+  })[issue]
 
 /** Pad cells so the columns line up; the first column is left aligned. */
 const table = (rows: ReadonlyArray<ReadonlyArray<string>>): Array<string> => {

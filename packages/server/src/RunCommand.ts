@@ -42,12 +42,18 @@ export class CliExit extends Data.TaggedError('CliExit')<{
   }
 }
 
-/** Load a test file and return its default export. */
-export const loadTest = (file: string) =>
+/**
+ * Load a test file and return its default export. `url` lets `mantix dev`
+ * import a fresh version of the file (see FreshImport.ts).
+ */
+export const loadTest = (
+  file: string,
+  url = pathToFileURL(resolve(file)).href,
+) =>
   Effect.tryPromise({
     // Node runs TypeScript test files directly (type stripping).
     try: () =>
-      import(pathToFileURL(resolve(file)).href) as Promise<{
+      import(url) as Promise<{
         readonly default?: TestDefinition
       }>,
     catch: error =>

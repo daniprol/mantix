@@ -2,6 +2,7 @@ import { Effect, Option } from 'effect'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { Histogram, type RunInfo, type Second } from '@mantix/api'
@@ -17,6 +18,7 @@ const run = (id: string, startedAt: number): RunInfo => ({
   duration: 2,
   plan: [],
   thresholds: [],
+  journal: [],
 })
 
 const second = (t: number, latencies: Array<number>): Second => ({
@@ -133,5 +135,28 @@ describe('RunStore', () => {
     expect(cut.endedAt).toBe(12_000)
     expect(cut.error).toContain('stopped before this run ended')
     expect(totals[0]!.requests).toBe(2)
+  })
+
+  it('reads runs saved before runs had a journal', async () => {
+    const file = tempFile()
+    await withStore(file, store =>
+      Effect.gen(function* () {
+        yield* store.create(run('old', 1_000), 'checkout.ts')
+        yield* store.finish({ ...run('old', 1_000), status: 'finished' }, [])
+      }),
+    )
+    // Rewrite the row the way an older Mantix saved it: no journal.
+    const db = new DatabaseSync(file)
+    const row = db.prepare("SELECT info FROM runs WHERE id = 'old'").get() as {
+      readonly info: string
+    }
+    const { journal: _, ...older } = JSON.parse(row.info)
+    db.prepare("UPDATE runs SET info = ? WHERE id = 'old'").run(
+      JSON.stringify(older),
+    )
+    db.close()
+
+    const info = await withStore(file, store => store.get('old'))
+    expect(Option.getOrThrow(info).journal).toEqual([])
   })
 })

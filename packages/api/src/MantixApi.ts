@@ -17,6 +17,8 @@ import {
   OpenApi,
 } from 'effect/http-api'
 
+import { DevEvent } from './Dev.ts'
+import { Control, JournalEntry } from './Journal.ts'
 import { RunEvent, RunInfo, RunOverrides, TestInfo } from './Run.ts'
 import { Second } from './Second.ts'
 
@@ -31,6 +33,16 @@ export class RunNotFound extends Schema.TaggedError<RunNotFound>()(
 export class RunAlreadyActive extends Schema.TaggedError<RunAlreadyActive>()(
   'RunAlreadyActive',
   { id: Schema.String },
+  { httpApiStatus: 409 },
+) {}
+
+/**
+ * A control that cannot be applied right now: the run has ended, it is
+ * already paused, a number is out of range... The message says which.
+ */
+export class InvalidControl extends Schema.TaggedError<InvalidControl>()(
+  'InvalidControl',
+  { message: Schema.String },
   { httpApiStatus: 409 },
 ) {}
 
@@ -74,6 +86,16 @@ export class RunsGroup extends HttpApiGroup.make('runs')
       success: Schema.Array(Second),
       error: RunNotFound,
     }),
+    // Steer a running run: change the rate, add a spike, pause, resume or
+    // pin a moment. Each control is appended to the run's journal and
+    // returned as the new entry; the stream then sends a `RunUpdated` with
+    // the journal, so every open dashboard draws the same flag.
+    HttpApiEndpoint.post('control', '/runs/:id/controls', {
+      params: { id: Schema.String },
+      payload: Control,
+      success: JournalEntry,
+      error: [RunNotFound, InvalidControl],
+    }),
     // The live stream. It first replays every Second so far, then sends new
     // ones as they close, and ends once the run is over (straight away for
     // a run from the history). One message per second; `RunUpdated`
@@ -89,8 +111,22 @@ export class RunsGroup extends HttpApiGroup.make('runs')
   )
   .annotateMerge(OpenApi.annotations({ title: 'Runs' })) {}
 
+/**
+ * `mantix dev`: one event every time the test file is saved. It first
+ * sends the latest event, if any. Under `mantix ui` it stays silent.
+ */
+export class DevGroup extends HttpApiGroup.make('dev').add(
+  HttpApiEndpoint.get('events', '/dev/events', {
+    success: HttpApiSchema.StreamSse({
+      data: DevEvent,
+      keepAlive: '15 seconds',
+    }),
+  }),
+) {}
+
 export class MantixApi extends HttpApi.make('mantix')
   .add(TestGroup)
   .add(RunsGroup)
+  .add(DevGroup)
   .prefix('/api')
   .annotateMerge(OpenApi.annotations({ title: 'Mantix API' })) {}
