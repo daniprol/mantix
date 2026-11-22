@@ -21,6 +21,7 @@ import { DevEvents } from './DevEvents.ts'
 import { probeReport } from './DevReport.ts'
 import { enableFreshImports, freshUrl } from './FreshImport.ts'
 import { CliExit, loadTest } from './RunCommand.ts'
+import { RunStore, historyFlags } from './RunStore.ts'
 import { Runs } from './Runs.ts'
 import { findWebRoot, serverLayer } from './Server.ts'
 import { describeServeError } from './UiCommand.ts'
@@ -125,6 +126,7 @@ export const dev = Command.make(
       Flag.withDescription('Port for the dashboard'),
       Flag.withDefault(4100),
     ),
+    ...historyFlags,
   },
   Effect.fn('dev')(
     function* (args) {
@@ -145,6 +147,11 @@ export const dev = Command.make(
       const services = Layer.mergeAll(
         Runs.layer(test, args.file),
         DevEvents.layer,
+      ).pipe(
+        // Runs started from the dev dashboard are saved like any other.
+        Layer.provide(
+          RunStore.forCli({ enabled: args.history, file: args.historyFile }),
+        ),
       )
       const app = Layer.mergeAll(
         serverLayer({ port: args.port, webRoot: findWebRoot() }),

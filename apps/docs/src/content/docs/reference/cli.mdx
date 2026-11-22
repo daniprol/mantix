@@ -18,7 +18,7 @@ Runs a test file headless, prints progress and a summary, checks thresholds,
 and exits with a code your CI can act on.
 
 ```sh
-mantix run <file> [--rate N] [--vus N] [--duration 30s] [--json out.json] [--quiet]
+mantix run <file> [--rate N] [--vus N] [--duration 30s] [--json out.json] [--quiet] [--no-history]
 ```
 
 | Flag              | What it does                                                                                                                                                      |
@@ -29,6 +29,8 @@ mantix run <file> [--rate N] [--vus N] [--duration 30s] [--json out.json] [--qui
 | `--duration 30s`  | How long to run. With `--rate` or `--vus`, the length of that constant load. On its own, the file's stages are stretched or squeezed to fit, keeping their shape. |
 | `--json out.json` | Also write the full summary as JSON to this file.                                                                                                                 |
 | `--quiet`         | Don't print the per-second lines; print only the final summary.                                                                                                   |
+| `--no-history`    | Don't save this run to the [run history](#run-history).                                                                                                           |
+| `--history-file`  | Where the run history lives. Default `.mantix/history.db`.                                                                                                        |
 
 Durations are written like `500ms`, `30s`, `2m`, `1h`, or a plain number of
 seconds. Without `--duration`, `--rate` and `--vus` run for the file's
@@ -103,10 +105,12 @@ Starts the local dashboard for a test file.
 mantix ui <file> [--port 4100]
 ```
 
-| Flag          | What it does                                |
-| ------------- | ------------------------------------------- |
-| `<file>`      | The test file, as for `mantix run`.         |
-| `--port 4100` | The port for the dashboard. Default `4100`. |
+| Flag             | What it does                                               |
+| ---------------- | ---------------------------------------------------------- |
+| `<file>`         | The test file, as for `mantix run`.                        |
+| `--port 4100`    | The port for the dashboard. Default `4100`.                |
+| `--no-history`   | Keep runs in memory only; nothing is saved.                |
+| `--history-file` | Where the run history lives. Default `.mantix/history.db`. |
 
 Open [http://localhost:4100](http://localhost:4100), press **Start** to begin
 the run and **Stop** to end it. The dashboard shows a latency heatmap with
@@ -115,6 +119,40 @@ endpoints table you can click to expand. See [Reading the
 dashboard](/mantix/start/dashboard/).
 
 The server only listens on your machine. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd>.
+
+## Run history
+
+Every run, from `mantix run`, `mantix ui` or `mantix dev`, is saved to a
+SQLite file, `.mantix/history.db` in the folder you run Mantix from.
+Restart `mantix ui` and earlier runs of the same test file are still there.
+Add `.mantix/` to your `.gitignore`.
+
+Both history flags can also be set with environment variables, which is
+handy in CI or a container. A flag on the command line always wins.
+
+| Variable                      | Same as                  |
+| ----------------------------- | ------------------------ |
+| `MANTIX_HISTORY_FILE=runs.db` | `--history-file runs.db` |
+| `MANTIX_HISTORY=false`        | `--no-history`           |
+
+The file keeps the raw data of each second (latency histograms, status
+codes, error counts), never precomputed percentiles, so any window of any
+run can be summarised exactly later and runs can be compared fairly.
+
+If Mantix is stopped mid-run (<kbd>Ctrl</kbd>+<kbd>C</kbd>), the run is saved
+as **stopped**. If the process is killed outright, the run is marked
+**crashed** the next time the history is opened, with every second saved up
+to that point. Saving never stops a test: if the file can't be written,
+Mantix prints a warning and carries on.
+
+The dashboard reads the history through the local HTTP API:
+
+| Endpoint                    | Returns                                                    |
+| --------------------------- | ---------------------------------------------------------- |
+| `GET /api/runs?limit=50`    | Runs of the loaded test file, newest first.                |
+| `GET /api/runs/:id`         | One run.                                                   |
+| `GET /api/runs/:id/seconds` | Every second of a run, histograms included.                |
+| `GET /api/runs/:id/events`  | The live stream; for a saved run, a replay that then ends. |
 
 ## mantix dev
 

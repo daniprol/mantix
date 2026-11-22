@@ -19,10 +19,11 @@ import {
   type RunResult,
   type TestDefinition,
   parseDuration,
-  startRun,
 } from '@mantix/core'
 
+import { startRecordedRun } from './History.ts'
 import { passed, secondLine, summaryReport } from './Report.ts'
+import { RunStore, historyFlags } from './RunStore.ts'
 
 /**
  * A failure we already explained to the person. The two markers tell
@@ -156,6 +157,7 @@ const run = Command.make(
       Flag.withDescription('Only print the final summary'),
       Flag.withDefault(false),
     ),
+    ...historyFlags,
   },
   Effect.fn('run')(function* (args) {
     const program = Effect.gen(function* () {
@@ -166,7 +168,12 @@ const run = Command.make(
       let handle: RunHandle | undefined
       const result = yield* Effect.scoped(
         Effect.gen(function* () {
-          handle = yield* startRun(test, { file: args.file, overrides }).pipe(
+          // startRecordedRun also saves the run to the history, so it can
+          // be opened in `mantix ui` and compared later.
+          handle = yield* startRecordedRun(test, {
+            file: args.file,
+            overrides,
+          }).pipe(
             Effect.mapError(e => new CliExit({ code: 1, message: e.message })),
           )
           const info = yield* handle.info
@@ -199,7 +206,11 @@ const run = Command.make(
         ),
       )
       yield* finish(result, args.json)
-    })
+    }).pipe(
+      Effect.provide(
+        RunStore.forCli({ enabled: args.history, file: args.historyFile }),
+      ),
+    )
     // Explain failures in one plain line instead of a stack trace.
     yield* program.pipe(
       Effect.tapError(error =>

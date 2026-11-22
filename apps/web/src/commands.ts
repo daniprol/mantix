@@ -64,7 +64,7 @@ export const FetchRuns = Command.define('FetchRuns', {
   messages: [Message.SucceededFetchRuns, Message.FailedFetchRuns],
   execute: Effect.gen(function* () {
     const client = yield* MantixClient
-    const runs = yield* client.runs.list({})
+    const runs = yield* client.runs.list({ query: {} })
     return Message.SucceededFetchRuns({ runs })
   }).pipe(
     Effect.catch(error =>

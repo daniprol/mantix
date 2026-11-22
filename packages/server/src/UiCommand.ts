@@ -11,6 +11,7 @@ import { testInfo } from '@mantix/core'
 
 import { DevEvents } from './DevEvents.ts'
 import { CliExit, loadTest } from './RunCommand.ts'
+import { RunStore, historyFlags } from './RunStore.ts'
 import { Runs } from './Runs.ts'
 import { findWebRoot, serverLayer } from './Server.ts'
 
@@ -37,6 +38,7 @@ export const ui = Command.make(
       Flag.withDescription('Port for the dashboard'),
       Flag.withDefault(4100),
     ),
+    ...historyFlags,
   },
   Effect.fn('ui')(
     function* (args) {
@@ -56,6 +58,10 @@ export const ui = Command.make(
 
       const app = serverLayer({ port: args.port, webRoot }).pipe(
         Layer.provide([Runs.layer(test, args.file), DevEvents.idle]),
+        // Every run is saved, so earlier runs can be opened after a restart.
+        Layer.provide(
+          RunStore.forCli({ enabled: args.history, file: args.historyFile }),
+        ),
       )
 
       yield* Console.log(

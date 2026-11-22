@@ -40,8 +40,9 @@ const RunsHandlers = HttpApiBuilder.group(
           // A bad test is caught at startup, so this would be our bug.
           Effect.catchTag('InvalidTest', error => Effect.die(error)),
         ),
-      list: () => runs.list,
+      list: ({ query }) => runs.list(query.limit),
       get: ({ params }) => runs.get(params.id),
+      seconds: ({ params }) => runs.seconds(params.id),
       control: ({ params, payload }) => runs.control(params.id, payload),
       stop: ({ params }) => runs.stop(params.id),
       events: ({ params }) => runs.events(params.id),
