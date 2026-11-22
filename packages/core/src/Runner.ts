@@ -140,7 +140,7 @@ const isScenario = (value: unknown): value is Scenario =>
     (value as { _tag?: unknown })._tag === 'EffectScenario')
 
 /** Normalise a default export to scenarios, with a clear error if it isn't. */
-const scenariosIn = (test: unknown): ReadonlyArray<Scenario> => {
+export const scenariosIn = (test: unknown): ReadonlyArray<Scenario> => {
   const list = Array.isArray(test) ? test : [test]
   if (list.length === 0 || !list.every(isScenario)) {
     throw new Error(
