@@ -162,6 +162,24 @@ describe('http client', () => {
     expect(skipped.status).toBe(200)
   })
 
+  it('traces each request of an iteration, with phases', async () => {
+    const timing = makeTiming(undefined, now())
+    const http = makeHttp(fresh(), timing, undefined)
+    await http.get('/wait')
+    await rejection(http.get('/status/503'))
+    const [first, second] = timing.spans
+    expect(first).toMatchObject({ endpoint: 'GET /wait', status: 200 })
+    expect(first!.duration).toBeGreaterThanOrEqual(45)
+    // Most of /wait is the server thinking: time to first byte.
+    expect(first!.phases!.waiting).toBeGreaterThanOrEqual(40)
+    expect(second).toMatchObject({ status: 503, error: 'HttpStatus' })
+    expect(second!.start).toBeGreaterThanOrEqual(first!.duration)
+    // Setup and teardown (no start time) are not traced.
+    const untraced = makeTiming()
+    await makeHttp(fresh(), untraced, undefined).get('/wait')
+    expect(untraced.spans).toEqual([])
+  })
+
   it('cancels without recording when the signal aborts', async () => {
     const http = makeHttp(fresh(), makeTiming(), AbortSignal.timeout(50))
     const error = await rejection(http.get('/slow'))

@@ -19,9 +19,15 @@ import { Effect, Exit } from 'effect'
 import { STATUS_CODES } from 'node:http'
 import { Agent, request } from 'undici'
 
-import type { SchemaDiff } from '@mantix/api'
+import type { RequestSpan, SchemaDiff } from '@mantix/api'
 
 import { toSeconds } from './Duration.ts'
+import {
+  type PhaseClock,
+  listenToPhases,
+  phasesOf,
+  withPhaseClock,
+} from './Phases.ts'
 import type { Recorder } from './Recorder.ts'
 import {
   type EffectHttp,
@@ -40,13 +46,16 @@ export const DEFAULT_TIMEOUT_MS = 10_000
  * matters: opening a new TCP connection per request would measure the
  * handshake, not the server.
  */
-export const makeAgent = (): Agent =>
-  new Agent({
+export const makeAgent = (): Agent => {
+  // Request phases for the waterfall come from undici's diagnostics.
+  listenToPhases()
+  return new Agent({
     keepAliveTimeout: 10_000,
     // Plenty of sockets per origin so the pool is not our bottleneck.
     connections: 1024,
     pipelining: 1,
   })
+}
 
 /** Everything a request needs that is the same for a whole scenario. */
 export interface ClientConfig {
@@ -83,6 +92,13 @@ export interface IterationTiming {
   readonly firstDelay: number | undefined
   /** Set when the first request has finished; later ones get no delay. */
   firstDone: boolean
+  /**
+   * When the iteration actually started (`now` ms). Only iterations have
+   * one; setup and teardown do not, and their requests are not traced.
+   */
+  readonly startedAt: number | undefined
+  /** Every request so far, for the iteration waterfall. */
+  readonly spans: Array<RequestSpan>
 }
 
 /**
@@ -99,6 +115,8 @@ export const makeTiming = (
       ? undefined
       : Math.max(0, startedAt - intendedStart),
   firstDone: false,
+  startedAt,
+  spans: [],
 })
 
 /** Fill `:name` placeholders. A missing value is a bug in the test. */
@@ -276,6 +294,9 @@ export const send = async <Body>(
     delay = timing.firstDelay
   }
 
+  // Filled in by undici's diagnostics while the request goes out.
+  const phaseClock: PhaseClock = {}
+
   const finish = (
     status: number | undefined,
     error:
@@ -288,6 +309,18 @@ export const send = async <Body>(
   ): void => {
     const latencyMs = config.now() - start
     timing.firstDone = true
+    if (timing.startedAt !== undefined) {
+      const phases = phasesOf(phaseClock, performance.now())
+      timing.spans.push({
+        endpoint,
+        start: Math.round((start - timing.startedAt) * 100) / 100,
+        duration: Math.round(latencyMs * 100) / 100,
+        ...(status === undefined ? {} : { status }),
+        ...(error === undefined ? {} : { error: error.kind }),
+        ...(phases === undefined ? {} : { phases }),
+        ...(phaseClock.newSocket === true ? { connected: true } : {}),
+      })
+    }
     config.recorder.recordRequest({
       endpoint,
       latencyMs,
@@ -317,13 +350,16 @@ export const send = async <Body>(
     let responseHeaders: Record<string, string>
     let text: string
     try {
-      const response = await request(url, {
-        method: method as 'GET',
-        headers,
-        body: body ?? null,
-        signal: controller.signal,
-        dispatcher: config.agent,
-      })
+      // withPhaseClock links undici's diagnostics events to this request.
+      const response = await withPhaseClock(phaseClock, () =>
+        request(url, {
+          method: method as 'GET',
+          headers,
+          body: body ?? null,
+          signal: controller.signal,
+          dispatcher: config.agent,
+        }),
+      )
       status = response.statusCode
       responseHeaders = flattenHeaders(response.headers)
       text = await response.body.text()

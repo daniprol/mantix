@@ -7,28 +7,12 @@
  */
 import { Schema } from 'effect'
 
+import { ErrorKind } from './ErrorKind.ts'
 import { Histogram } from './Histogram.ts'
+import { IterationTrace } from './Trace.ts'
 
-/**
- * Every failure is put into one of these classes, so a bug in your test
- * script never looks like a server failure.
- *
- * - Transport: connection refused, reset, DNS failure...
- * - Timeout: no response within the request timeout.
- * - HttpStatus: the server answered with a status we treat as a failure.
- * - SchemaMismatch: the body did not match the `expect` schema.
- * - CheckFailed: a check written in the test failed.
- * - ScriptError: the test code itself threw (your bug, not the server's).
- */
-export const ErrorKind = Schema.Literals([
-  'Transport',
-  'Timeout',
-  'HttpStatus',
-  'SchemaMismatch',
-  'CheckFailed',
-  'ScriptError',
-])
-export type ErrorKind = typeof ErrorKind.Type
+// The error classes live in their own file; re-exported from here.
+export { ErrorKind } from './ErrorKind.ts'
 
 /** What happened on one endpoint during one second. */
 export const EndpointSecond = Schema.Struct({
@@ -155,6 +139,8 @@ export const Second = Schema.Struct({
    * noisy one.
    */
   errorSamples: Schema.Array(ErrorSample),
+  /** The slowest iteration that finished this second, for the waterfall. */
+  slowest: Schema.optionalKey(IterationTrace),
   /** How many errors of each fingerprint happened this second. */
   fingerprints: Schema.optionalKey(Schema.Record(Schema.String, Schema.Finite)),
 })
