@@ -5,11 +5,12 @@ description: Every mantix command and flag, its output and its exit codes.
 
 import { Aside } from '@astrojs/starlight/components'
 
-<Aside type="caution" title="Pre-release">
-  Until Mantix is on npm, run the CLI from a clone of the repository as `pnpm
-  mantix …` (it runs `packages/server/src/bin.ts` with Node). After the first
-  release it will be `npx mantix …`. Commands and flags may still change before
-  then.
+<Aside title="Running the CLI">
+  Install Mantix in your project with `npm install --save-dev mantix`, `pnpm add
+  --save-dev mantix` or `bun add --dev mantix`. Then run it as `npx mantix …`,
+  `pnpm mantix …` or `bunx mantix …`. Inside a clone of the Mantix repository,
+  `pnpm mantix …` runs the CLI straight from its TypeScript source. Commands and
+  flags may still change before version 1.0.
 </Aside>
 
 ## mantix run
@@ -82,7 +83,7 @@ honestly](/mantix/concepts/results/)).
 In a CI step, that is all you need:
 
 ```yaml
-- run: pnpm mantix run examples/checkout.ts --json results.json
+- run: npx mantix run checkout.ts --json results.json
 ```
 
 ### JSON summary

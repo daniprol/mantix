@@ -3,46 +3,63 @@ title: Quick start
 description: Run Mantix from the repository, point it at the demo target, and read your first results.
 ---
 
-import { Aside } from '@astrojs/starlight/components'
+import { Tabs, TabItem } from '@astrojs/starlight/components'
 
-In about five minutes you will run a load test against a small demo server,
-read the results in your terminal, and then watch the same test live in the
-dashboard. No Effect knowledge needed, and none of it touches the internet.
-
-<Aside type="caution" title="Running from the repository">
-  Mantix is not on npm yet, so there is no `npm install mantix`. Until the first
-  release you clone the repository and run the CLI from there with `pnpm
-  mantix`. Once it is published, the same commands become `npx mantix`.
-</Aside>
+In about five minutes you will install Mantix, run a load test against a
+small demo server, read the results in your terminal, and then watch the
+same test live in the dashboard. No Effect knowledge needed, and none of it
+touches the internet.
 
 ## What you need
 
-- **Node 22.19 or newer.** The repository pins Node 24 in `.node-version`,
-  which most version managers pick up.
-- **pnpm 12.** pnpm manages its own version, so any recent pnpm will switch
-  to the right one.
-- **git.**
+- **Node 22.19 or newer.** Mantix runs on Node, which runs `.ts` test files
+  directly, so there is nothing to compile. You need Node even if you use
+  Bun as your package manager.
+- **git and pnpm**, only to run the demo server in step 2.
 
-## 1. Get the code
+## 1. Install Mantix
 
-Clone the repository and install its dependencies:
+In the project you want to test from (or a new empty folder), add Mantix as
+a dev dependency:
+
+<Tabs syncKey="pkg">
+<TabItem label="npm">
+
+```sh
+npm install --save-dev mantix
+```
+
+</TabItem>
+<TabItem label="pnpm">
+
+```sh
+pnpm add --save-dev mantix
+```
+
+</TabItem>
+<TabItem label="Bun">
+
+```sh
+bun add --dev mantix
+```
+
+</TabItem>
+</Tabs>
+
+That gives you the `mantix` command. This guide writes it as `npx mantix`;
+with pnpm it is `pnpm mantix`, and with Bun `bunx mantix`.
+
+## 2. Start the demo target
+
+The Mantix repository ships a small HTTP server to practise on. It behaves
+like a tiny shop, and it has a few bugs planted on purpose so there is
+something to find. Clone the repository, then start the server in its own
+terminal and leave it running:
 
 ```sh
 git clone https://github.com/daniprol/mantix.git
 cd mantix
 pnpm install
-```
-
-From now on, `pnpm mantix` runs the CLI straight from its TypeScript source
-(`packages/server/src/bin.ts`) with Node. There is no build step.
-
-## 2. Start the demo target
-
-The repository ships a small HTTP server to practise on. It behaves like a
-tiny shop, and it has a few bugs planted on purpose so there is something to
-find. Start it in its own terminal and leave it running:
-
-```sh
 pnpm --filter @mantix/demo-target start
 ```
 
@@ -65,9 +82,9 @@ And the planted bugs:
 
 ## 3. Run your first test
 
-The repository has a ready-made test in `examples/quick.ts`:
+Back in the folder where you installed Mantix, create `quick.ts`:
 
-```ts title="examples/quick.ts"
+```ts title="quick.ts"
 import { rate, scenario } from 'mantix'
 
 export default scenario({
@@ -84,9 +101,29 @@ export default scenario({
 
 Run it:
 
+<Tabs syncKey="pkg">
+<TabItem label="npm">
+
 ```sh
-pnpm mantix run examples/quick.ts
+npx mantix run quick.ts
 ```
+
+</TabItem>
+<TabItem label="pnpm">
+
+```sh
+pnpm mantix run quick.ts
+```
+
+</TabItem>
+<TabItem label="Bun">
+
+```sh
+bunx mantix run quick.ts
+```
+
+</TabItem>
+</Tabs>
 
 Mantix prints one line per second while the test runs:
 
@@ -134,10 +171,10 @@ Flags override the file's load model for one run:
 
 ```sh
 # Twice the rate, for a minute
-pnpm mantix run examples/quick.ts --rate 100 --duration 1m
+npx mantix run quick.ts --rate 100 --duration 1m
 
 # 20 virtual users looping instead of a fixed rate
-pnpm mantix run examples/quick.ts --vus 20
+npx mantix run quick.ts --vus 20
 ```
 
 See the [CLI reference](/mantix/reference/cli/) for every flag.
@@ -147,7 +184,7 @@ See the [CLI reference](/mantix/reference/cli/) for every flag.
 Now run the same file in the dashboard:
 
 ```sh
-pnpm mantix ui examples/quick.ts
+npx mantix ui quick.ts
 ```
 
 Open [http://localhost:4100](http://localhost:4100), press **Start**, and
@@ -156,8 +193,10 @@ watch the run build up second by second. Press **Stop** whenever you like.
 
 ## 5. Write your own
 
-Test files live in the `examples/` folder, which is set up so that
-`import … from 'mantix'` resolves. Copy `quick.ts` to a new file and change
-the journey. The next page to read is [Writing tests](/mantix/guides/writing-tests/);
-`examples/checkout.ts` is a fuller example that adds to a cart and checks
-out.
+Change the journey in `quick.ts`, or add more files next to it: each test
+file is one default export. The next page to read is [Writing
+tests](/mantix/guides/writing-tests/). For a fuller example that adds to a
+cart and checks out, see
+[`examples/checkout.ts`](https://github.com/daniprol/mantix/blob/main/examples/checkout.ts)
+in the repository you cloned, which you can run from there with
+`pnpm mantix run examples/checkout.ts`.
