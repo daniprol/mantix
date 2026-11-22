@@ -106,6 +106,9 @@ export const mergeEndpointSeconds = (
     uncorrected: Histogram.mergeAll(parts.map(p => p.uncorrected)),
     statuses,
     errors,
+    // Setup and teardown rows keep their phase, so totals stay out of the
+    // load figures the same way the per-second rows do (see isLoad).
+    ...(parts[0]?.phase === undefined ? {} : { phase: parts[0].phase }),
   }
 }
 

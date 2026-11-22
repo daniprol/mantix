@@ -106,6 +106,34 @@ describe('RunStore', () => {
     expect(total.latency.max).toBe(3_000)
   })
 
+  it('keeps the phase of setup rows in the totals', async () => {
+    const setup = second(0, [5_000])
+    const withSetup: Second = {
+      ...setup,
+      endpoints: [
+        {
+          ...setup.endpoints[0]!,
+          endpoint: 'POST /login (setup)',
+          phase: 'setup',
+        },
+      ],
+    }
+    const totals = await withStore(tempFile(), store =>
+      Effect.gen(function* () {
+        yield* store.create(run('s', 1_000), 'checkout.ts')
+        yield* store.finish({ ...run('s', 1_000), status: 'finished' }, [
+          withSetup,
+          second(1, [1_000]),
+        ])
+        return yield* store.totals('s')
+      }),
+    )
+    expect(totals.map(t => [t.endpoint, t.phase])).toEqual([
+      ['GET /cart', undefined],
+      ['POST /login (setup)', 'setup'],
+    ])
+  })
+
   it('lists newest first and honours the limit', async () => {
     const list = await withStore(tempFile(), store =>
       Effect.gen(function* () {
