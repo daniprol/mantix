@@ -13,6 +13,7 @@ import {
   type RunInfo,
   type RunSummary,
   type Second,
+  countRequestErrors,
 } from '@mantix/api'
 
 type Style = Parameters<typeof styleText>[0]
@@ -55,7 +56,7 @@ export const secondLine = (
   let errors = 0
   for (const part of second.endpoints) {
     requests += part.requests
-    for (const count of Object.values(part.errors)) errors += count
+    errors += countRequestErrors(part.errors)
   }
   const latency = Histogram.mergeAll(second.endpoints.map(e => e.latency))
   const p99 =

@@ -57,4 +57,19 @@ describe('summarizeSeconds', () => {
     expect(total.errors).toBe(1)
     expect(total.errorRate).toBeCloseTo(1 / 6)
   })
+
+  it('leaves script errors out of the error rate but still shows them', () => {
+    const base = second(0, 'GET /a', [1, 2, 3, 4], 1)
+    const part = base.endpoints[0]!
+    const seconds = [
+      {
+        ...base,
+        endpoints: [{ ...part, errors: { HttpStatus: 1, ScriptError: 2 } }],
+      },
+    ]
+    const { total } = summarizeSeconds(seconds)
+    expect(total.errors).toBe(1)
+    expect(total.errorRate).toBeCloseTo(1 / 4)
+    expect(total.errorsByKind).toEqual({ HttpStatus: 1, ScriptError: 2 })
+  })
 })

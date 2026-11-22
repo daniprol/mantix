@@ -3,7 +3,7 @@
  *
  *   "p99 < 250ms"    latency percentile (p50, p90, p95, p99) or max
  *   "max < 2s"       units: ms (default) or s
- *   "errors < 1%"    share of failed requests
+ *   "errors < 1%"    share of failed requests (ScriptErrors not counted)
  *   "rps > 100"      completed requests per second
  *
  * Operators: <, <=, >, >=. A threshold applies to all endpoints together,

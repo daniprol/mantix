@@ -7,7 +7,12 @@
  */
 import { Array, Option, pipe } from 'effect'
 
-import { Histogram, type RunInfo, type Second } from '@mantix/api'
+import {
+  Histogram,
+  type RunInfo,
+  type Second,
+  countRequestErrors,
+} from '@mantix/api'
 
 import { plannedTotalAt } from '../domain/plan.ts'
 import { LAG_LIMIT_MS } from '../domain/stats.ts'
@@ -52,8 +57,9 @@ const toColumn = (second: Second): SecondColumn => {
     second.endpoints.map(endpoint => endpoint.latency),
   )
   const requests = second.endpoints.reduce((sum, e) => sum + e.requests, 0)
+  // Same rule as the summary: a ScriptError is not a failed request.
   const errors = second.endpoints.reduce(
-    (sum, e) => sum + Object.values(e.errors).reduce((a, b) => a + b, 0),
+    (sum, e) => sum + countRequestErrors(e.errors),
     0,
   )
   const cells = merged.buckets.map(([index, count]) => {

@@ -30,6 +30,23 @@ export const ErrorKind = Schema.Literals([
 ])
 export type ErrorKind = typeof ErrorKind.Type
 
+/**
+ * Does an error of this kind count as a failed request? Every kind does
+ * except ScriptError: a bug in the test is not the server's failure, so it
+ * must never move the `errors` figure or the "errors < 1%" threshold. It
+ * stays visible in `errorsByKind` and in the error samples.
+ */
+export const isRequestError = (kind: string): boolean => kind !== 'ScriptError'
+
+/** Failed requests in an `errors` record, without any ScriptErrors. */
+export const countRequestErrors = (
+  errors: Readonly<Record<string, number>>,
+): number =>
+  Object.entries(errors).reduce(
+    (sum, [kind, count]) => (isRequestError(kind) ? sum + count : sum),
+    0,
+  )
+
 /** What happened on one endpoint during one second. */
 export const EndpointSecond = Schema.Struct({
   /** Method plus route template, e.g. "GET /cart/:id". */
