@@ -34,7 +34,7 @@ type Summary = ReturnType<typeof summarizeSeconds>
 const summaries = new WeakMap<ReadonlyArray<Second>, Map<number, Summary>>()
 
 /** `summarizeSeconds` over the last `count` seconds (or all), remembered. */
-export const summarizeLast = (
+const summarizeLast = (
   seconds: ReadonlyArray<Second>,
   count: number,
 ): Summary => {

@@ -13,7 +13,7 @@ import {
 import { type Model, RunState, TestState, initialModel } from './model.ts'
 import { Feed } from './model.ts'
 
-export const testInfo: TestInfo = {
+const testInfo: TestInfo = {
   file: 'examples/checkout.ts',
   name: 'checkout-flow',
   scenarios: [

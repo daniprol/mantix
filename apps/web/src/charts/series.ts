@@ -21,7 +21,7 @@ import * as Threshold from '../domain/threshold.ts'
 import type { TimelineData } from './store.ts'
 
 /** One second, boiled down to what the charts need. */
-export type SecondColumn = Readonly<{
+type SecondColumn = Readonly<{
   p50: number | null
   p99: number | null
   requests: number
@@ -35,7 +35,7 @@ export type SecondColumn = Readonly<{
   cells: ReadonlyArray<readonly [number, number]>
 }>
 
-export type LatencyLimit = Readonly<{ ms: number; failed: boolean }>
+type LatencyLimit = Readonly<{ ms: number; failed: boolean }>
 
 export type TimelineSeries = Readonly<{
   x: Array<number>

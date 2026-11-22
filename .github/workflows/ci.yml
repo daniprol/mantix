@@ -29,3 +29,5 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # knip: unused files, exports and dependencies (config in knip.json).
+      - run: pnpm knip
