@@ -63,7 +63,7 @@ const ENGINE_DIR = dirname(fileURLToPath(import.meta.url))
  * "checkout.ts:42", read from the stack. Frames inside Node, node_modules
  * or Mantix itself are skipped, so it points at the test author's code.
  */
-export const locationOf = (error: unknown): string | undefined => {
+const locationOf = (error: unknown): string | undefined => {
   if (!(error instanceof Error) || error.stack === undefined) return undefined
   for (const line of error.stack.split('\n').slice(1)) {
     // "at fn (file:///a/b/checkout.ts:42:13)" or "at file:///a/b.ts:42:13"

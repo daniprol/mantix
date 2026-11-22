@@ -202,7 +202,7 @@ const typeOf = (value: unknown): string =>
  * what the schema library said, and the value that actually arrived there
  * (cut short, so a huge body cannot bloat the data).
  */
-export const schemaDiff = (
+const schemaDiff = (
   issues: ReadonlyArray<StandardSchemaV1.Issue>,
   body: unknown,
 ): SchemaDiff | undefined => {
