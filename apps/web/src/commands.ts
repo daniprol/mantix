@@ -18,6 +18,7 @@ import {
   findTimeline,
 } from './charts/store.ts'
 import { Message } from './message.ts'
+import { Theme, applyTheme } from './theme.ts'
 
 export const NavigateInternal = Command.define('NavigateInternal', {
   args: { url: Schema.String },
@@ -137,4 +138,12 @@ export const SyncTimeline = Command.define('SyncTimeline', {
       )
       return Message.CompletedSyncTimeline()
     }),
+})
+
+/** Switch the page to a theme and remember the choice. */
+export const ApplyTheme = Command.define('ApplyTheme', {
+  args: { theme: Theme },
+  messages: [Message.CompletedApplyTheme],
+  execute: ({ theme }) =>
+    applyTheme(theme).pipe(Effect.as(Message.CompletedApplyTheme())),
 })

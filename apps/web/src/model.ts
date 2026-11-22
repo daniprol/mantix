@@ -14,6 +14,7 @@ import { RunInfo, Second, TestInfo } from '@mantix/api'
 
 import { Span } from './domain/span.ts'
 import { AppRoute } from './route.ts'
+import { Theme } from './theme.ts'
 
 /** Talking to the Mantix server to learn which test is loaded. */
 export const TestState = defineTaggedUnion({
@@ -91,10 +92,14 @@ export const Model = Schema.Struct({
   loadForm: LoadForm,
   comparePick: ComparePick,
   maybeActionError: Schema.Option(Schema.String),
+  theme: Theme,
 })
 export type Model = typeof Model.Type
 
-export const initialModel = (route: AppRoute): Model => ({
+export const initialModel = (
+  route: AppRoute,
+  theme: Theme = 'System',
+): Model => ({
   route,
   test: TestState.Connecting(),
   history: History.Loading(),
@@ -107,4 +112,5 @@ export const initialModel = (route: AppRoute): Model => ({
     maybeBaselineId: Option.none(),
   },
   maybeActionError: Option.none(),
+  theme,
 })

@@ -32,7 +32,12 @@ The Mantix dashboard. It talks to the Mantix server through the shared
   20 requests shows no p95.
 - The list under the timeline shares its columns with the chart
   (`charts/layout.ts`), so each endpoint's curve lines up with the time axis.
-- Design rules: light theme only, tokens in `styles.css`, Geist + Geist
+- Themes: every token in `styles.css` is a `light-dark()` pair. System
+  follows the OS with no JavaScript; the sidebar switch pins Light or Dark
+  through `data-theme` (`theme.ts`), and index.html applies the saved choice
+  before first paint. The charts read the tokens through `charts/palette.ts`
+  and redraw when the colours change. Never hard-code a colour.
+- Design rules: tokens in `styles.css`, Geist + Geist
   Mono for numbers, hairlines not cards, amber only for live edge, selection
   and focus, red only for errors and failed checks, one primary button. No
   explanatory titles or sentences: labels and data.

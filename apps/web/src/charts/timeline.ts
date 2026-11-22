@@ -23,7 +23,7 @@ import uPlot from 'uplot'
 import * as Format from '../domain/format.ts'
 import { Message } from '../message.ts'
 import { AXIS, RIGHT, TIME_ROOM, TRACK_HEIGHTS, X_AXIS_ROOM } from './layout.ts'
-import { MONO, type Palette, readPalette } from './palette.ts'
+import { MONO, type Palette, readPalette, watchColours } from './palette.ts'
 import { type TimelineSeries, buildSeries } from './series.ts'
 import {
   TIMELINE_HOST_ID,
@@ -720,8 +720,10 @@ const createTimeline = (
   })
   resize.observe(element)
 
-  // Repaint once the web fonts have loaded, so labels use Geist.
+  // Repaint once the web fonts have loaded, so labels use Geist, and
+  // whenever the theme changes, so the canvas takes the new colours.
   void document.fonts.ready.then(schedule)
+  const stopWatchingColours = watchColours(schedule)
 
   return {
     update: next => {
@@ -730,6 +732,7 @@ const createTimeline = (
     },
     destroy: () => {
       resize.disconnect()
+      stopWatchingColours()
       all.forEach(chart => chart.destroy())
       element.replaceChildren()
     },
