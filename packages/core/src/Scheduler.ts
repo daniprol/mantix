@@ -42,7 +42,7 @@ export const planLoad = (plan: LoadPlan): LoadSource => ({
 })
 
 /** How long one scheduling slice lasts, in seconds. */
-export const SLICE_SECONDS = 0.025
+const SLICE_SECONDS = 0.025
 
 /** A moment in the timetable: an arrival, or the end of a slice. */
 export interface Tick {
@@ -65,7 +65,7 @@ export interface Tick {
  * scheduler asks for it. That is what lets a live change take effect: the
  * rate is read just before each slice, never far ahead.
  */
-export function* schedule(
+function* schedule(
   load: Pick<LoadSource, 'target' | 'ended'>,
   from = 0,
 ): Generator<Tick> {
