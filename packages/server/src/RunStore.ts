@@ -21,7 +21,7 @@
  * Writing history must never break a run: callers log failures and go on
  * (see `recordRun` in History.ts).
  */
-import { Context, Data, Effect, Layer, Option, Schema } from 'effect'
+import { Config, Context, Data, Effect, Layer, Option, Schema } from 'effect'
 import { Flag } from 'effect/cli'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -141,16 +141,24 @@ export class RunStore extends Context.Service<
 /** Where the history is saved unless `--history-file` says otherwise. */
 export const DEFAULT_HISTORY_FILE = '.mantix/history.db'
 
-/** The `--no-history` and `--history-file` flags, shared by run and ui. */
+/**
+ * The `--no-history` and `--history-file` flags, shared by run, ui and dev.
+ *
+ * Each can also be set with an environment variable, handy in CI or a
+ * container. `withFallbackConfig` reads the variable only when the flag is
+ * not given, so a flag always wins; `withDefault` applies when neither is.
+ */
 export const historyFlags = {
   history: Flag.Boolean('history').pipe(
     Flag.withDescription(
-      'Save runs to the run history (use --no-history to skip)',
+      'Save runs to the run history (use --no-history to skip; env MANTIX_HISTORY=false)',
     ),
+    Flag.withFallbackConfig(Config.Boolean('MANTIX_HISTORY')),
     Flag.withDefault(true),
   ),
   historyFile: Flag.String('history-file').pipe(
-    Flag.withDescription('The run history file'),
+    Flag.withDescription('The run history file (env MANTIX_HISTORY_FILE)'),
+    Flag.withFallbackConfig(Config.String('MANTIX_HISTORY_FILE')),
     Flag.withDefault(DEFAULT_HISTORY_FILE),
   ),
 }

@@ -122,10 +122,18 @@ The server only listens on your machine. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kb
 
 ## Run history
 
-Every run, from `mantix run` or `mantix ui`, is saved to a SQLite file,
-`.mantix/history.db` in the folder you run Mantix from. Restart `mantix ui`
-and earlier runs of the same test file are still there. Add `.mantix/` to
-your `.gitignore`.
+Every run, from `mantix run`, `mantix ui` or `mantix dev`, is saved to a
+SQLite file, `.mantix/history.db` in the folder you run Mantix from.
+Restart `mantix ui` and earlier runs of the same test file are still there.
+Add `.mantix/` to your `.gitignore`.
+
+Both history flags can also be set with environment variables, which is
+handy in CI or a container. A flag on the command line always wins.
+
+| Variable                      | Same as                  |
+| ----------------------------- | ------------------------ |
+| `MANTIX_HISTORY_FILE=runs.db` | `--history-file runs.db` |
+| `MANTIX_HISTORY=false`        | `--no-history`           |
 
 The file keeps the raw data of each second (latency histograms, status
 codes, error counts), never precomputed percentiles, so any window of any
