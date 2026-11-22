@@ -181,6 +181,9 @@ const RunsHandlers = HttpApiBuilder.group(MantixApi, 'runs', handlers =>
     .handle('get', ({ params }) =>
       Effect.map(findRun(params.id), run => run.info),
     )
+    .handle('seconds', ({ params }) =>
+      Effect.map(findRun(params.id), run => [...run.seconds]),
+    )
     .handle('stop', ({ params }) =>
       Effect.map(findRun(params.id), run => {
         endRun(run, 'stopped', Date.now())

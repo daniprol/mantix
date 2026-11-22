@@ -76,6 +76,51 @@ const addCounts = (
   }
 }
 
+/**
+ * Merge several EndpointSeconds of one endpoint into a single one: counts
+ * add up and histograms merge exactly. The result is still raw data (no
+ * percentiles), so it can be merged again later, for example to compare
+ * the totals of two runs.
+ */
+export const mergeEndpointSeconds = (
+  endpoint: string,
+  parts: ReadonlyArray<EndpointSecond>,
+): EndpointSecond => {
+  const statuses: Record<string, number> = {}
+  const errors: Record<string, number> = {}
+  let requests = 0
+  for (const part of parts) {
+    requests += part.requests
+    addCounts(statuses, part.statuses)
+    addCounts(errors, part.errors)
+  }
+  return {
+    endpoint,
+    requests,
+    latency: Histogram.mergeAll(parts.map(p => p.latency)),
+    uncorrected: Histogram.mergeAll(parts.map(p => p.uncorrected)),
+    statuses,
+    errors,
+  }
+}
+
+/** One merged EndpointSecond per endpoint over a list of Seconds, by name. */
+export const endpointTotals = (
+  seconds: ReadonlyArray<Second>,
+): Array<EndpointSecond> => {
+  const byEndpoint = new Map<string, Array<EndpointSecond>>()
+  for (const second of seconds) {
+    for (const part of second.endpoints) {
+      const list = byEndpoint.get(part.endpoint) ?? []
+      list.push(part)
+      byEndpoint.set(part.endpoint, list)
+    }
+  }
+  return [...byEndpoint.entries()]
+    .map(([name, parts]) => mergeEndpointSeconds(name, parts))
+    .sort((a, b) => a.endpoint.localeCompare(b.endpoint))
+}
+
 /** Merge many per-second endpoint results into one set of stats. */
 const statsFor = (
   endpoint: string,

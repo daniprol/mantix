@@ -1,17 +1,22 @@
 import { Layer, Schema } from 'effect'
 import { HttpRouter, HttpServer } from 'effect/http'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { type Server, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { RunInfo, TestInfo } from '@mantix/api'
-import { rate, scenario } from '@mantix/core'
+import { RunInfo, Second, TestInfo } from '@mantix/api'
+import { type TestDefinition, rate, scenario } from '@mantix/core'
 
+import { RunStore } from '../src/RunStore.ts'
 import { Runs } from '../src/Runs.ts'
 import { ApiRoutes } from '../src/Server.ts'
 
 // A tiny target server for the test run to hit.
 let target: Server
+let test: TestDefinition
 let handler: (request: Request) => Promise<Response>
 let dispose: () => Promise<void>
 
@@ -23,7 +28,7 @@ beforeAll(async () => {
   await new Promise<void>(resolve => target.listen(0, resolve))
   const { port } = target.address() as AddressInfo
 
-  const test = scenario({
+  test = scenario({
     name: 'tiny',
     baseUrl: `http://localhost:${port}`,
     load: rate.constant(20, { duration: '2s' }),
@@ -37,6 +42,7 @@ beforeAll(async () => {
   ;({ handler, dispose } = HttpRouter.toWebHandler(
     ApiRoutes.pipe(
       Layer.provide(Runs.layer(test, 'tiny.ts')),
+      Layer.provide(RunStore.memory),
       Layer.provide(HttpServer.layerServices),
     ),
   ))
@@ -104,4 +110,69 @@ describe('mantix ui server', () => {
     const response = await call('/api/runs/nope')
     expect(response.status).toBe(404)
   })
+})
+
+describe('run history', () => {
+  /** A server for the tiny test, saving its history to `file`. */
+  const startServer = (file: string) => {
+    const web = HttpRouter.toWebHandler(
+      ApiRoutes.pipe(
+        Layer.provide(Runs.layer(test, 'tiny.ts')),
+        Layer.provide(RunStore.layer(file)),
+        Layer.provide(HttpServer.layerServices),
+      ),
+    )
+    return {
+      call: (path: string, init?: RequestInit) =>
+        web.handler(new Request(`http://mantix.test${path}`, init)),
+      dispose: web.dispose,
+    }
+  }
+
+  it('keeps runs across a restart and replays them', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'mantix-server-'))
+    const file = join(folder, 'history.db')
+    try {
+      // First server: run the test to the end.
+      const first = startServer(file)
+      const started = await first.call('/api/runs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ duration: 1 }),
+      })
+      const run = await asRun(started)
+      await (await first.call(`/api/runs/${run.id}/events`)).text()
+      await first.dispose()
+
+      // Second server on the same file: the run is still there.
+      const second = startServer(file)
+      const list = Schema.decodeUnknownSync(Schema.Array(RunInfo))(
+        await (await second.call('/api/runs?limit=5')).json(),
+      )
+      expect(list.map(r => r.id)).toEqual([run.id])
+      expect(list[0]!.status).toBe('finished')
+
+      const seconds = Schema.decodeUnknownSync(Schema.Array(Second))(
+        await (await second.call(`/api/runs/${run.id}/seconds`)).json(),
+      )
+      expect(seconds.length).toBeGreaterThan(0)
+      expect(seconds[0]!.endpoints[0]!.endpoint).toBe('GET /ok')
+
+      // The event stream replays a stored run and ends right away.
+      const events = await (
+        await second.call(`/api/runs/${run.id}/events`)
+      ).text()
+      expect(events).toContain('"_tag":"Second"')
+      expect(events).toContain('"status":"finished"')
+
+      // Stopping a run that is over changes nothing.
+      const stopped = await asRun(
+        await second.call(`/api/runs/${run.id}/stop`, { method: 'POST' }),
+      )
+      expect(stopped.status).toBe('finished')
+      await second.dispose()
+    } finally {
+      rmSync(folder, { recursive: true, force: true })
+    }
+  }, 15_000)
 })

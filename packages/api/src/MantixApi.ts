@@ -18,6 +18,7 @@ import {
 } from 'effect/http-api'
 
 import { RunEvent, RunInfo, RunOverrides, TestInfo } from './Run.ts'
+import { Second } from './Second.ts'
 
 /** Returned when a run id does not exist. */
 export class RunNotFound extends Schema.TaggedError<RunNotFound>()(
@@ -46,8 +47,13 @@ export class RunsGroup extends HttpApiGroup.make('runs')
       success: RunInfo,
       error: RunAlreadyActive,
     }),
-    // Every run since the server started, newest first.
+    // Runs of the loaded test file, newest first, including runs from
+    // earlier sessions and from `mantix run` (the run history).
     HttpApiEndpoint.get('list', '/runs', {
+      query: {
+        /** At most this many runs (default 50). */
+        limit: Schema.optional(Schema.FiniteFromString),
+      },
       success: Schema.Array(RunInfo),
     }),
     HttpApiEndpoint.get('get', '/runs/:id', {
@@ -61,9 +67,17 @@ export class RunsGroup extends HttpApiGroup.make('runs')
       success: RunInfo,
       error: RunNotFound,
     }),
+    // Every Second of a run so far, as one JSON array. Seconds hold raw
+    // histograms, so any window can be summarised or compared exactly.
+    HttpApiEndpoint.get('seconds', '/runs/:id/seconds', {
+      params: { id: Schema.String },
+      success: Schema.Array(Second),
+      error: RunNotFound,
+    }),
     // The live stream. It first replays every Second so far, then sends new
-    // ones as they close, and ends once the run is over. One message per
-    // second; `RunUpdated` arrives whenever status or thresholds change.
+    // ones as they close, and ends once the run is over (straight away for
+    // a run from the history). One message per second; `RunUpdated`
+    // arrives whenever status or thresholds change.
     HttpApiEndpoint.get('events', '/runs/:id/events', {
       params: { id: Schema.String },
       success: HttpApiSchema.StreamSse({
