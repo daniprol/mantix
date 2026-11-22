@@ -61,7 +61,10 @@ describe('runner', () => {
           result.seconds.some(s =>
             s.errorSamples.some(
               e =>
-                e.kind === 'ScriptError' && e.message === 'oops in the script',
+                e.kind === 'ScriptError' &&
+                e.message === 'oops in the script' &&
+                // Points at the line in the test file that threw.
+                /^Runner\.test\.ts:\d+$/.test(e.location ?? ''),
             ),
           ),
         )

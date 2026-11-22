@@ -49,7 +49,7 @@ describe('Recorder', () => {
     })
     expect(endpoint!.uncorrected.min).toBe(10_000)
     expect(endpoint!.latency.min).toBe(12_000)
-    expect(second.errorSamples).toEqual([
+    expect(second.errorSamples).toMatchObject([
       {
         endpoint: 'GET /a',
         kind: 'HttpStatus',
@@ -63,15 +63,20 @@ describe('Recorder', () => {
     expect(next).toMatchObject({ completed: 1, inFlight: 0, endpoints: [] })
   })
 
-  it('keeps at most five distinct error samples per second', () => {
+  it('keeps a few distinct samples per problem', () => {
     const recorder = new Recorder()
     for (let i = 0; i < 20; i++) {
-      recorder.sample('GET /a', 'Timeout', `message ${i % 7}`)
+      // "message 0".."message 6" are one problem once numbers are blanked.
+      recorder.sample('GET /a', 'Transport', `message ${i % 7}`)
       recorder.sample('GET /a', 'Timeout', 'same')
     }
-    const { errorSamples } = recorder.snapshot(0, gauges)
-    expect(errorSamples).toHaveLength(5)
-    expect(new Set(errorSamples.map(s => s.message)).size).toBe(5)
+    const { errorSamples, fingerprints } = recorder.snapshot(0, gauges)
+    expect(errorSamples.map(s => s.message)).toEqual([
+      'message 0',
+      'same',
+      'message 1',
+    ])
+    expect(Object.values(fingerprints ?? {})).toEqual([20, 20])
   })
 
   it('keeps the latest iteration start of the second', () => {
@@ -82,5 +87,24 @@ describe('Recorder', () => {
     expect(recorder.lateStartMs).toBe(40)
     recorder.snapshot(0, gauges)
     expect(recorder.lateStartMs).toBe(0)
+  })
+
+  it('never lets a noisy error crowd out a rare one', () => {
+    const recorder = new Recorder()
+    for (let i = 0; i < 500; i++) {
+      recorder.sample('POST /checkout', 'HttpStatus', '503 Service Unavailable')
+      recorder.sample('GET /cart/:id', 'Transport', `ECONNRESET ${i}`)
+    }
+    recorder.sample('POST /checkout', 'ScriptError', 'boom', {
+      location: 'checkout.ts:42',
+    })
+    const second = recorder.snapshot(0, gauges)
+    const counts = Object.values(second.fingerprints ?? {}).sort(
+      (a, b) => a - b,
+    )
+    // Numbers in messages are blanked, so the resets are one problem.
+    expect(counts).toEqual([1, 500, 500])
+    expect(second.errorSamples.map(s => s.kind)).toContain('ScriptError')
+    expect(second.errorSamples.length).toBeLessThanOrEqual(10)
   })
 })

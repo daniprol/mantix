@@ -47,12 +47,37 @@ export const EndpointSecond = Schema.Struct({
 })
 export type EndpointSecond = typeof EndpointSecond.Type
 
+/**
+ * Where a response body did not match the `expect` schema: the exact
+ * path, what the schema wanted and what actually arrived.
+ */
+export const SchemaDiff = Schema.Struct({
+  /** The path in the body, e.g. "$.items[3].price". */
+  path: Schema.String,
+  /** What the schema library said, e.g. "Expected number". */
+  expected: Schema.String,
+  /** The value that arrived, as short JSON, e.g. "\"19.99\"". */
+  received: Schema.String,
+  /** Its type: string, number, boolean, null, array, object or missing. */
+  receivedType: Schema.String,
+})
+export type SchemaDiff = typeof SchemaDiff.Type
+
 /** One example of an error, kept so people can see what went wrong. */
 export const ErrorSample = Schema.Struct({
   endpoint: Schema.String,
   kind: ErrorKind,
   /** A short, human readable message. Secrets are never included. */
   message: Schema.String,
+  /**
+   * Errors with the same fingerprint are the same problem (see Errors.ts).
+   * Absent in data recorded before Mantix grouped errors.
+   */
+  fingerprint: Schema.optionalKey(Schema.String),
+  /** For SchemaMismatch: where the body differed from the schema. */
+  diff: Schema.optionalKey(SchemaDiff),
+  /** For ScriptError: the line in the test file that threw, e.g. "checkout.ts:42". */
+  location: Schema.optionalKey(Schema.String),
 })
 export type ErrorSample = typeof ErrorSample.Type
 
@@ -124,7 +149,13 @@ export const Second = Schema.Struct({
   generator: Schema.optionalKey(GeneratorHealth),
   /** Per-endpoint results. */
   endpoints: Schema.Array(EndpointSecond),
-  /** A few example errors from this second (at most a handful). */
+  /**
+   * A few example errors from this second. Every fingerprint seen this
+   * second has at least one, so a rare error is never pushed out by a
+   * noisy one.
+   */
   errorSamples: Schema.Array(ErrorSample),
+  /** How many errors of each fingerprint happened this second. */
+  fingerprints: Schema.optionalKey(Schema.Record(Schema.String, Schema.Finite)),
 })
 export type Second = typeof Second.Type

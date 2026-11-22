@@ -11,11 +11,20 @@ import {
   type ErrorKind,
   type GeneratorHealth,
   Histogram,
+  type SchemaDiff,
   type Second,
+  fingerprint,
 } from '@mantix/api'
 
-/** At most this many example errors are kept per second. */
-const MAX_ERROR_SAMPLES = 5
+/**
+ * Example errors kept per second. The first example of every fingerprint
+ * is always kept (up to MAX_FINGERPRINTS of them), so a rare error is
+ * never crowded out; after that each fingerprint gets at most
+ * MAX_PER_FINGERPRINT, and the second at most MAX_ERROR_SAMPLES.
+ */
+const MAX_ERROR_SAMPLES = 10
+const MAX_PER_FINGERPRINT = 2
+const MAX_FINGERPRINTS = 20
 /** Error messages are cut to this length so one huge body can't bloat a Second. */
 const MAX_MESSAGE_LENGTH = 300
 
@@ -31,7 +40,11 @@ export interface RequestRecord {
   readonly status?: number | undefined
   /** Set when the request failed. */
   readonly error?:
-    | { readonly kind: ErrorKind; readonly message: string }
+    | {
+        readonly kind: ErrorKind
+        readonly message: string
+        readonly diff?: SchemaDiff | undefined
+      }
     | undefined
 }
 
@@ -52,6 +65,9 @@ export class Recorder {
   private endpoints = new Map<string, EndpointCounters>()
   private samples: Array<Second['errorSamples'][number]> = []
   private sampleKeys = new Set<string>()
+  /** Errors per fingerprint this second, and examples kept of each. */
+  private fingerprints = new Map<string, number>()
+  private samplesPerFingerprint = new Map<string, number>()
 
   // Iteration counters for the open second.
   private offered = 0
@@ -89,28 +105,48 @@ export class Recorder {
     }
     if (record.error !== undefined) {
       bump(counters.errors, record.error.kind)
-      this.sample(record.endpoint, record.error.kind, record.error.message)
+      this.sample(
+        record.endpoint,
+        record.error.kind,
+        record.error.message,
+        record.error.diff === undefined ? {} : { diff: record.error.diff },
+      )
     }
   }
 
   /**
-   * Keep an example error, unless we already have this exact one or five
-   * examples this second. Callers must never pass header values or secrets.
+   * Count an error under its fingerprint and maybe keep it as an example
+   * (see MAX_ERROR_SAMPLES). Callers must never pass header values or
+   * secrets.
    */
-  sample(endpoint: string, kind: ErrorKind, message: string): void {
-    if (this.samples.length >= MAX_ERROR_SAMPLES) {
-      return
-    }
+  sample(
+    endpoint: string,
+    kind: ErrorKind,
+    message: string,
+    extra: { readonly diff?: SchemaDiff; readonly location?: string } = {},
+  ): void {
     const short =
       message.length > MAX_MESSAGE_LENGTH
         ? `${message.slice(0, MAX_MESSAGE_LENGTH)}…`
         : message
-    const key = `${endpoint}\u0000${kind}\u0000${short}`
-    if (this.sampleKeys.has(key)) {
-      return
-    }
+    const error = { endpoint, kind, message: short, ...extra }
+    const fp = fingerprint(error)
+    this.fingerprints.set(fp, (this.fingerprints.get(fp) ?? 0) + 1)
+
+    const kept = this.samplesPerFingerprint.get(fp) ?? 0
+    const keepFirst =
+      kept === 0 && this.samplesPerFingerprint.size < MAX_FINGERPRINTS
+    const keepMore =
+      kept > 0 &&
+      kept < MAX_PER_FINGERPRINT &&
+      this.samples.length < MAX_ERROR_SAMPLES
+    if (!keepFirst && !keepMore) return
+    // The exact same message twice adds nothing.
+    const key = `${fp}\u0000${short}`
+    if (this.sampleKeys.has(key)) return
     this.sampleKeys.add(key)
-    this.samples.push({ endpoint, kind, message: short })
+    this.samplesPerFingerprint.set(fp, kept + 1)
+    this.samples.push({ ...error, fingerprint: fp })
   }
 
   /** The schedule wanted an iteration to start. */
@@ -153,7 +189,8 @@ export class Recorder {
       this.started === 0 &&
       this.completed === 0 &&
       this.failed === 0 &&
-      this.samples.length === 0
+      this.samples.length === 0 &&
+      this.fingerprints.size === 0
     )
   }
 
@@ -196,12 +233,17 @@ export class Recorder {
         : { generator: gauges.generator }),
       endpoints,
       errorSamples: this.samples,
+      ...(this.fingerprints.size === 0
+        ? {}
+        : { fingerprints: Object.fromEntries(this.fingerprints) }),
     }
     // Start the next second. New maps are simpler than clearing the old
     // ones, and the old ones now belong to the Second we just returned.
     this.endpoints = new Map()
     this.samples = []
     this.sampleKeys = new Set()
+    this.fingerprints = new Map()
+    this.samplesPerFingerprint = new Map()
     this.offered = 0
     this.started = 0
     this.dropped = 0

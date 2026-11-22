@@ -93,7 +93,7 @@ describe('http client', () => {
       statuses: { '503': 1 },
       errors: { HttpStatus: 1 },
     })
-    expect(s.errorSamples[0]).toEqual({
+    expect(s.errorSamples[0]).toMatchObject({
       endpoint: 'GET /status/503',
       kind: 'HttpStatus',
       message: '503 Service Unavailable',
@@ -143,6 +143,13 @@ describe('http client', () => {
     const s = second()
     expect(s.endpoints[0]!.errors).toEqual({ SchemaMismatch: 1 })
     expect(s.errorSamples[0]!.message).toMatch(/^\$\.price: /)
+    // The diff says where, what was expected, and what arrived.
+    expect(s.errorSamples[0]!.diff).toMatchObject({
+      path: '$.price',
+      received: '"1.00"',
+      receivedType: 'string',
+    })
+    expect(s.fingerprints).toEqual({ [s.errorSamples[0]!.fingerprint!]: 1 })
     // Never leaks header values into samples.
     expect(JSON.stringify(s)).not.toContain('secret-token')
     // validateSample: 0 skips validation.
