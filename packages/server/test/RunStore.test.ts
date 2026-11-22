@@ -1,13 +1,13 @@
 import { Effect, Option } from 'effect'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { Histogram, type RunInfo, type Second } from '@mantix/api'
 
-import { RunStore } from '../src/RunStore.ts'
+import { type ListOptions, RunStore } from '../src/RunStore.ts'
 
 const run = (id: string, startedAt: number): RunInfo => ({
   id,
@@ -186,5 +186,119 @@ describe('RunStore', () => {
 
     const info = await withStore(file, store => store.get('old'))
     expect(Option.getOrThrow(info).journal).toEqual([])
+  })
+})
+
+describe('RunStore run context', () => {
+  const withContext = (
+    id: string,
+    startedAt: number,
+    context: { project: string; branch?: string; label?: string },
+  ): RunInfo => ({
+    ...run(id, startedAt),
+    context: {
+      project: context.project,
+      git: {
+        commit: `${id}0000`,
+        dirty: false,
+        ...(context.branch === undefined ? {} : { branch: context.branch }),
+      },
+      mantixVersion: '1.0.0',
+      machine: { hostname: 'ci', os: 'linux x64', node: '22.19.0' },
+      ...(context.label === undefined ? {} : { label: context.label }),
+    },
+  })
+
+  it('filters by project, branch and label', async () => {
+    const ids = await withStore(tempFile(), store =>
+      Effect.gen(function* () {
+        yield* store.create(
+          withContext('a', 1, { project: 'shop', branch: 'main' }),
+          'load.ts',
+        )
+        yield* store.create(
+          withContext('b', 2, {
+            project: 'shop',
+            branch: 'feature',
+            label: 'v2',
+          }),
+          'load.ts',
+        )
+        yield* store.create(
+          withContext('c', 3, { project: 'blog', branch: 'main' }),
+          'load.ts',
+        )
+        const ids = (options: ListOptions) =>
+          Effect.map(store.list(options), runs => runs.map(r => r.id))
+        return yield* Effect.all({
+          shop: ids({ project: 'shop' }),
+          main: ids({ branch: 'main' }),
+          shopMain: ids({ file: 'load.ts', project: 'shop', branch: 'main' }),
+          label: ids({ label: 'v2' }),
+          none: ids({ project: 'nope' }),
+        })
+      }),
+    )
+    expect(ids).toEqual({
+      shop: ['b', 'a'],
+      main: ['c', 'a'],
+      shopMain: ['a'],
+      label: ['b'],
+      none: [],
+    })
+  })
+
+  it('upgrades a version 1 file and keeps its runs readable', async () => {
+    // A history file as Mantix 1 wrote it, before runs had a context.
+    const file = tempFile()
+    mkdirSync(dirname(file), { recursive: true })
+    const v1 = new DatabaseSync(file)
+    v1.exec(`
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY, file TEXT NOT NULL, test_name TEXT NOT NULL,
+        status TEXT NOT NULL, started_at INTEGER NOT NULL, ended_at INTEGER,
+        info TEXT NOT NULL
+      );
+      CREATE TABLE seconds (
+        run_id TEXT NOT NULL REFERENCES runs (id) ON DELETE CASCADE,
+        t INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (run_id, t)
+      ) WITHOUT ROWID;
+      CREATE TABLE endpoint_totals (
+        run_id TEXT NOT NULL REFERENCES runs (id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL, data TEXT NOT NULL,
+        PRIMARY KEY (run_id, endpoint)
+      ) WITHOUT ROWID;
+      PRAGMA user_version = 1;
+    `)
+    const old = { ...run('old', 1_000), status: 'finished', endedAt: 3_000 }
+    v1.prepare(
+      `INSERT INTO runs VALUES ('old', 'load.ts', 'checkout', 'finished', 1000, 3000, ?)`,
+    ).run(JSON.stringify(old))
+    v1.close()
+
+    const result = await withStore(file, store =>
+      Effect.gen(function* () {
+        yield* store.create(
+          withContext('new', 2_000, { project: 'shop' }),
+          'load.ts',
+        )
+        return yield* Effect.all({
+          all: store.list({ file: 'load.ts' }),
+          shop: store.list({ project: 'shop' }),
+        })
+      }),
+    )
+    expect(result.all.map(r => [r.id, r.context?.project])).toEqual([
+      ['new', 'shop'],
+      ['old', undefined],
+    ])
+    // Old runs have no project, so a project filter leaves them out.
+    expect(result.shop.map(r => r.id)).toEqual(['new'])
+    const db = new DatabaseSync(file)
+    const row = db.prepare('PRAGMA user_version').get() as {
+      readonly user_version: number
+    }
+    db.close()
+    expect(row.user_version).toBe(2)
   })
 })

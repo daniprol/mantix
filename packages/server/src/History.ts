@@ -14,6 +14,7 @@ import {
   startRun,
 } from '@mantix/core'
 
+import { gatherContext } from './RunContext.ts'
 import { type HistoryError, RunStore } from './RunStore.ts'
 
 /**
@@ -35,12 +36,21 @@ const save = (effect: Effect.Effect<void, HistoryError>) =>
 /**
  * `startRun`, plus a fiber that writes each Second to the RunStore as it
  * closes. Like `startRun`, the run belongs to the current Scope.
+ *
+ * The run's context (project, git, label...) is gathered here, once per
+ * run, so a long `mantix ui` session still records the commit each run
+ * was made at.
  */
 export const startRecordedRun = Effect.fn('startRecordedRun')(function* (
   test: TestDefinition,
-  options: RunOptions & { readonly file: string },
+  options: Omit<RunOptions, 'context'> & {
+    readonly file: string
+    readonly label?: string | undefined
+  },
 ) {
   const store = yield* RunStore
+  const { label, ...runOptions } = options
+  const context = yield* gatherContext({ label })
   const finish = (handle: RunHandle) =>
     Effect.flatMap(handle.snapshot, result =>
       save(store.finish(result.info, result.seconds)),
@@ -55,7 +65,7 @@ export const startRecordedRun = Effect.fn('startRecordedRun')(function* (
     handle === undefined ? Effect.void : finish(handle),
   )
 
-  const started = yield* startRun(test, options)
+  const started = yield* startRun(test, { ...runOptions, context })
   handle = started
   yield* save(store.create(yield* started.info, historyName(options.file)))
 

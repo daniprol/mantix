@@ -29,7 +29,7 @@ import {
 } from '@mantix/core'
 
 import { historyName, startRecordedRun } from './History.ts'
-import { RunStore } from './RunStore.ts'
+import { type ListOptions, RunStore } from './RunStore.ts'
 
 export class Runs extends Context.Service<
   Runs,
@@ -47,8 +47,13 @@ export class Runs extends Context.Service<
     readonly start: (
       overrides: RunOverrides,
     ) => Effect.Effect<RunInfo, RunAlreadyActive | InvalidTest>
-    /** Runs of this test file, newest first, from the history. */
-    readonly list: (limit?: number) => Effect.Effect<ReadonlyArray<RunInfo>>
+    /**
+     * Runs of this test file, newest first, from the history. Optionally
+     * only those of one project, branch or label.
+     */
+    readonly list: (
+      options?: Omit<ListOptions, 'file'>,
+    ) => Effect.Effect<ReadonlyArray<RunInfo>>
     readonly get: (id: string) => Effect.Effect<RunInfo, RunNotFound>
     /** Steer a running run; the control is added to its journal. */
     readonly control: (
@@ -70,7 +75,15 @@ export class Runs extends Context.Service<
     ) => Effect.Effect<Stream.Stream<RunEvent>, RunNotFound>
   }
 >()('mantix/server/Runs') {
-  static readonly layer = (test: TestDefinition, file: string) =>
+  /**
+   * `label` comes from `--label` and is saved with every run this server
+   * starts (the dashboard has no field for it yet).
+   */
+  static readonly layer = (
+    test: TestDefinition,
+    file: string,
+    options: { readonly label?: string | undefined } = {},
+  ) =>
     Layer.effect(
       Runs,
       Effect.gen(function* () {
@@ -134,6 +147,7 @@ export class Runs extends Context.Service<
           const handle = yield* startRecordedRun(definition, {
             file,
             overrides,
+            label: options.label,
           }).pipe(
             Scope.provide(runScope),
             Effect.provideService(RunStore, store),
@@ -156,9 +170,11 @@ export class Runs extends Context.Service<
           return info
         })
 
-        const list = Effect.fn('Runs.list')(function* (limit?: number) {
+        const list = Effect.fn('Runs.list')(function* (
+          filters: Omit<ListOptions, 'file'> = {},
+        ) {
           const saved = yield* store
-            .list({ file: historyName(file), limit })
+            .list({ ...filters, file: historyName(file) })
             .pipe(Effect.orDie)
           // The history is written once per second; for runs of this
           // session, answer with the in-memory info, which is never behind.
