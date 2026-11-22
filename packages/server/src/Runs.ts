@@ -8,6 +8,9 @@
 import { Context, Effect, Layer, Option, Ref, Scope, Stream } from 'effect'
 
 import {
+  type Control,
+  type InvalidControl,
+  type JournalEntry,
   RunAlreadyActive,
   type RunEvent,
   type RunInfo,
@@ -26,8 +29,15 @@ import {
 export class Runs extends Context.Service<
   Runs,
   {
-    /** The test file this server was started with. */
-    readonly test: TestInfo
+    /** The test file as it is now (`mantix dev` reloads it on save). */
+    readonly test: Effect.Effect<TestInfo>
+    /**
+     * Swap in a newly loaded version of the test file. Runs already going
+     * keep the code they started with; the next Start uses the new one.
+     */
+    readonly reload: (
+      test: TestDefinition,
+    ) => Effect.Effect<TestInfo, InvalidTest>
     /** Start a run. Fails if one is still going. */
     readonly start: (
       overrides: RunOverrides,
@@ -35,6 +45,11 @@ export class Runs extends Context.Service<
     /** Every run so far, newest first. */
     readonly list: Effect.Effect<ReadonlyArray<RunInfo>>
     readonly get: (id: string) => Effect.Effect<RunInfo, RunNotFound>
+    /** Steer a running run; the control is added to its journal. */
+    readonly control: (
+      id: string,
+      control: Control,
+    ) => Effect.Effect<JournalEntry, RunNotFound | InvalidControl>
     /** Stop a run early and wait until teardown has finished. */
     readonly stop: (id: string) => Effect.Effect<RunInfo, RunNotFound>
     /** Replays the run so far, then follows it live until it ends. */
@@ -48,7 +63,10 @@ export class Runs extends Context.Service<
       Runs,
       Effect.gen(function* () {
         // Validate the test once, up front, so a typo fails at startup.
-        const info = testInfo(test, file)
+        const current = yield* Ref.make({
+          definition: test,
+          info: testInfo(test, file),
+        })
 
         // The layer's own scope: it closes when the server shuts down
         // (Ctrl-C), which stops any run still going and runs its teardown.
@@ -81,20 +99,38 @@ export class Runs extends Context.Service<
           // Each run gets a child of the server scope, so it keeps running
           // after this request has been answered.
           const runScope = yield* Scope.fork(serverScope)
-          const handle = yield* startRun(test, { file, overrides }).pipe(
+          const { definition } = yield* Ref.get(current)
+          const handle = yield* startRun(definition, { file, overrides }).pipe(
             Scope.provide(runScope),
           )
           yield* Ref.update(handles, all => [handle, ...all])
           return yield* handle.info
         })
 
+        const reload = Effect.fn('Runs.reload')(function* (
+          definition: TestDefinition,
+        ) {
+          const info = yield* Effect.try({
+            try: () => testInfo(definition, file),
+            catch: error =>
+              new InvalidTest({
+                message: error instanceof Error ? error.message : String(error),
+              }),
+          })
+          yield* Ref.set(current, { definition, info })
+          return info
+        })
+
         return Runs.of({
-          test: info,
+          test: Effect.map(Ref.get(current), c => c.info),
+          reload,
           start,
           list: Effect.flatMap(Ref.get(handles), list =>
             Effect.forEach(list, handle => handle.info),
           ),
           get: id => Effect.flatMap(find(id), handle => handle.info),
+          control: (id, control) =>
+            Effect.flatMap(find(id), handle => handle.control(control)),
           stop: id =>
             Effect.flatMap(find(id), handle =>
               Effect.andThen(handle.stop, handle.info),

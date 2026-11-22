@@ -2,15 +2,43 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     "packages/*": {
-      "entry": ["src/bin.ts", "test/**/*.test.ts"],
+      "entry": ["test/**/*.test.ts"],
       "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "packages/server": {
+      "entry": ["test/**/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      // Used by the bundled @mantix/core code, so the published package
+      // must depend on it; and @mantix/web is listed so `pnpm -r build`
+      // builds the dashboard before tsdown copies it (tsdown.config.ts).
+      "ignoreDependencies": ["undici", "@mantix/web"]
     },
     "examples": {
       "entry": ["*.ts"]
     },
-    "apps/demo-target": {
-      "entry": ["src/server.ts"]
+    "apps/web": {
+      // index.html loads styles.css, which knip does not follow, so name it
+      // here. Its @imports use tailwindcss and the Geist fonts.
+      "entry": ["src/styles.css"],
+      // Loaded by @foldkit/vite-plugin (the DevTools overlay), never
+      // imported by our code.
+      "ignoreDependencies": ["@foldkit/devtools"]
+    },
+    "apps/docs": {
+      // The fonts are listed as strings in astro.config.mjs (customCss).
+      // @astrojs/mdx comes with Starlight; we list it only to pin its version.
+      "ignoreDependencies": [
+        "@astrojs/mdx",
+        "@fontsource-variable/geist",
+        "@fontsource-variable/geist-mono"
+      ]
     }
   },
-  "ignoreDependencies": ["@changesets/cli", "@effect/language-service"]
+  "ignoreDependencies": ["@effect/language-service"],
+  // Some catalog entries are not used by any package.json: @foldkit/ui is
+  // kept for upcoming work, @foldkit/devtools-mcp runs via
+  // npx from .mcp.json.
+  "ignoreIssues": {
+    "pnpm-workspace.yaml": ["catalog"]
+  }
 }

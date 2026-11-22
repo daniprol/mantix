@@ -17,6 +17,7 @@ import { createServer } from 'node:http'
  */
 import { NodeHttpServer, NodeRuntime } from '@effect/platform-node'
 import {
+  InvalidControl,
   MantixApi,
   type RunEvent,
   type RunInfo,
@@ -24,6 +25,8 @@ import {
   RunNotFound,
   type Second,
   type ThresholdResult,
+  checkControl,
+  steer,
   summarizeSeconds,
 } from '@mantix/api'
 
@@ -82,7 +85,11 @@ const endRun = (run: MockRun, status: RunInfo['status'], now: number) => {
   publish(run, { _tag: 'RunUpdated', run: run.info })
 }
 
-/** Produces one Second per second until the plan is done or someone stops it. */
+/**
+ * Produces one Second per second until the plan is done or someone stops it.
+ * The load comes from the plan plus the run journal, like the real engine,
+ * so the controls (rate, spike, pause) show up in the fake data too.
+ */
 const generate = (run: MockRun, duration: number) =>
   Effect.gen(function* () {
     const plan = run.info.plan[0]!.plan
@@ -90,10 +97,11 @@ const generate = (run: MockRun, duration: number) =>
       seed: runs.size * 7919,
       lag: LAG,
     })
-    for (let t = 0; t < duration; t++) {
+    for (let t = 0; t < steer(run.info.plan, run.info.journal).end; t++) {
       yield* Effect.sleep('1 second')
       if (isOver(run)) return
-      const second = simulateSecond(sim, t)
+      const steering = steer(run.info.plan, run.info.journal)
+      const second = simulateSecond(sim, t, steering.total(t + 0.5))
       run.seconds.push(second)
       publish(run, { _tag: 'Second', second })
       const thresholds = evaluateThresholds(run.seconds)
@@ -166,6 +174,7 @@ const RunsHandlers = HttpApiBuilder.group(MantixApi, 'runs', handlers =>
             duration,
             plan: [{ ...scenario, plan }],
             thresholds: evaluateThresholds([]),
+            journal: [],
           },
           seconds: [],
           listeners: new Set(),
@@ -181,6 +190,26 @@ const RunsHandlers = HttpApiBuilder.group(MantixApi, 'runs', handlers =>
     .handle('get', ({ params }) =>
       Effect.map(findRun(params.id), run => run.info),
     )
+    .handle('control', ({ params, payload }) =>
+      Effect.gen(function* () {
+        const run = yield* findRun(params.id)
+        if (isOver(run)) {
+          return yield* new InvalidControl({
+            message: 'The run has already ended.',
+          })
+        }
+        const { plan, journal } = run.info
+        const at = (Date.now() - run.info.startedAt) / 1000
+        const problem = checkControl(plan, journal, payload, at)
+        if (problem !== undefined) {
+          return yield* new InvalidControl({ message: problem })
+        }
+        const entry = { seq: journal.length + 1, at, control: payload }
+        run.info = { ...run.info, journal: [...journal, entry] }
+        publish(run, { _tag: 'RunUpdated', run: run.info })
+        return entry
+      }),
+    )
     .handle('stop', ({ params }) =>
       Effect.map(findRun(params.id), run => {
         endRun(run, 'stopped', Date.now())
@@ -192,8 +221,13 @@ const RunsHandlers = HttpApiBuilder.group(MantixApi, 'runs', handlers =>
     ),
 )
 
+// The mock has no file watcher, so the dev stream stays quiet.
+const DevHandlers = HttpApiBuilder.group(MantixApi, 'dev', handlers =>
+  handlers.handle('events', () => Effect.succeed(Stream.never)),
+)
+
 const ApiRoutes = HttpApiBuilder.layer(MantixApi).pipe(
-  Layer.provide([TestHandlers, RunsHandlers]),
+  Layer.provide([TestHandlers, RunsHandlers, DevHandlers]),
 )
 
 const Server = HttpRouter.serve(ApiRoutes).pipe(

@@ -13,7 +13,7 @@ import {
 import { type Model, RunState, TestState, initialModel } from './model.ts'
 import { Feed } from './model.ts'
 
-export const testInfo: TestInfo = {
+const testInfo: TestInfo = {
   file: 'examples/checkout.ts',
   name: 'checkout-flow',
   scenarios: [
@@ -46,6 +46,7 @@ export const runningRun: RunInfo = {
     { expression: 'p99 < 250ms', actual: 0, passed: true },
     { expression: 'errors < 1%', actual: 0, passed: true },
   ],
+  journal: [],
 }
 
 /** One second where every request took `ms` and `failed` of them failed. */

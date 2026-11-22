@@ -1,63 +1,112 @@
 /**
  * The open-model scheduler (rate.*), decision D1 in the proposal.
  *
- * Iterations arrive on a timetable computed from the plan, whether or not
+ * Iterations arrive on a timetable computed from the load, whether or not
  * earlier ones have finished, the way real users arrive at a website. Each
  * iteration is forked into its own fiber and told when it *should* have
  * started, so its latency can be measured from that moment.
  *
+ * The load can change at any moment (the rate dial, a spike, a pause), so
+ * the timetable is not computed up front. The scheduler walks time in
+ * short slices, asks the load for the rate at each slice, and places the
+ * arrivals that fall inside it. A change takes effect within one slice.
+ *
  * Time comes from Effect's Clock (`Effect.sleep`), so a test can swap in
  * `TestClock` and run a five-minute ramp in milliseconds.
  */
-
 import { Effect, FiberSet } from 'effect'
 
-import type { LoadPlan } from '@mantix/api'
+import { type LoadPlan, planDuration, targetAt } from '@mantix/api'
 
-import { planDuration } from './Load.ts'
 import type { Recorder } from './Recorder.ts'
 
 /**
- * The arrival times, in seconds from the start of the plan.
+ * The load a scenario should generate over time, in seconds since the
+ * run started. The runner builds one from the plan and the run journal
+ * (see Steering.ts in @mantix/api); tests build one from a plan.
+ */
+export interface LoadSource {
+  /** The target at second `s`: iterations/s (open) or VUs (closed). */
+  readonly target: (s: number) => number
+  /** True once the load is over for good. */
+  readonly ended: (s: number) => boolean
+  /** True while the run is paused: start no new iterations. */
+  readonly paused: (s: number) => boolean
+}
+
+/** A load that just follows a plan, starting at second 0. */
+export const planLoad = (plan: LoadPlan): LoadSource => ({
+  target: s => targetAt(plan, s),
+  ended: s => s >= planDuration(plan),
+  paused: () => false,
+})
+
+/** How long one scheduling slice lasts, in seconds. */
+const SLICE_SECONDS = 0.025
+
+/** A moment in the timetable: an arrival, or the end of a slice. */
+export interface Tick {
+  /** Seconds since the load's second 0. */
+  readonly at: number
+  readonly arrival: boolean
+}
+
+/**
+ * The timetable: every arrival, plus the end of every slice, from second
+ * `from` until the load ends.
  *
  * We integrate the rate instead of stepping it, so ramps are exact: the
  * number of arrivals before time t is N(t) = ∫ rate, and arrival k (from 0)
- * happens where N(t) = k. Within a stage the rate moves linearly from `a`
- * to `b`, so N is a quadratic and we solve it directly.
+ * happens where N(t) = k. Inside one slice the rate is taken to move in a
+ * straight line from `a` to `b`, so N is a quadratic and we solve it
+ * directly.
  *
- * A generator yields the times one by one, so a long, fast plan never
- * builds a huge array.
+ * It is a generator, so the next slice is only computed when the
+ * scheduler asks for it. That is what lets a live change take effect: the
+ * rate is read just before each slice, never far ahead.
  */
-export function* arrivalTimes(plan: LoadPlan): Generator<number> {
-  let k = 0 // the next arrival to place
-  let stageStart = 0 // seconds
-  let arrivedBefore = 0 // N at the start of this stage
-  let from = plan.start
-  for (const stage of plan.stages) {
-    const a = Math.max(0, from)
-    const b = Math.max(0, stage.target)
-    const d = stage.duration
-    // Arrivals that fall inside this stage: the area under the rate line.
+function* schedule(
+  load: Pick<LoadSource, 'target' | 'ended'>,
+  from = 0,
+): Generator<Tick> {
+  let next = 0 // the next arrival to place, as a value of N
+  let arrived = 0 // N at the start of the current slice
+  const d = SLICE_SECONDS
+  // Slice j starts at from + j·d. Counting slices (instead of adding d
+  // again and again) keeps floating point error from piling up.
+  for (let j = 0; ; j++) {
+    const s = from + j * d
+    if (load.ended(s)) return
+    // The rate at the start of the slice and just before its end, so a
+    // plan that ends at the slice boundary still counts its last slice.
+    const a = Math.max(0, load.target(s))
+    const b = Math.max(0, load.target(s + d - 1e-9))
     const area = ((a + b) / 2) * d
-    const arrivedAfter = arrivedBefore + area
-    while (d > 0 && k < arrivedAfter - 1e-9) {
+    // The small margin absorbs floating point error summed over slices.
+    while (next < arrived + area - 1e-6) {
       // Solve a·τ + (slope/2)·τ² = Δ for τ. This form of the quadratic
       // formula is stable when the slope is zero or negative.
-      const delta = k - arrivedBefore
+      const delta = next - arrived
       const slope = (b - a) / d
       const root = Math.sqrt(Math.max(0, a * a + 2 * slope * delta))
       const tau = delta <= 0 ? 0 : (2 * delta) / (a + root)
-      yield stageStart + Math.min(tau, d)
-      k++
+      yield { at: s + Math.min(tau, d), arrival: true }
+      next++
     }
-    stageStart += d
-    arrivedBefore = arrivedAfter
-    from = stage.target
+    arrived += area
+    yield { at: from + (j + 1) * d, arrival: false }
+  }
+}
+
+/** Arrival times for a fixed plan, in seconds. Handy in tests. */
+export function* arrivalTimes(plan: LoadPlan): Generator<number> {
+  for (const tick of schedule(planLoad(plan))) {
+    if (tick.arrival) yield tick.at
   }
 }
 
 export interface OpenModelOptions {
-  readonly plan: LoadPlan
+  readonly load: LoadSource
   /** The most iterations that may run at once. */
   readonly maxVus: number
   readonly recorder: Recorder
@@ -70,19 +119,23 @@ export interface OpenModelOptions {
   readonly iteration: (intendedStart: number, vu: number) => Effect.Effect<void>
   /** Called whenever the number of busy slots changes. */
   readonly onBusy?: (busy: number) => void
-  /** When the plan starts, in `now` ms. Default: now. */
+  /**
+   * Second 0 of `load`, in `now` ms. Default: now. Scheduling begins at
+   * the current moment, so if we start late (a slow setup) the overdue
+   * part is skipped instead of being fired as one burst.
+   */
   readonly start?: number
 }
 
 /**
- * Run the plan to its end. Returns when the last arrival has been placed
- * and the plan's duration has passed; iterations still running stay in the
- * returned FiberSet so the caller decides how long to wait for them.
+ * Run the load to its end. Returns when the load says it has ended;
+ * iterations still running stay in the returned FiberSet so the caller
+ * decides how long to wait for them.
  */
 export const runOpenModel = Effect.fn('runOpenModel')(function* (
   options: OpenModelOptions,
 ) {
-  const { plan, maxVus, recorder, now, iteration } = options
+  const { load, maxVus, recorder, now, iteration } = options
   // A FiberSet owns every iteration fiber. When the surrounding Scope
   // closes (the run stops), all of them are interrupted together.
   const fibers = yield* FiberSet.make<void>()
@@ -93,12 +146,16 @@ export const runOpenModel = Effect.fn('runOpenModel')(function* (
   for (let slot = maxVus; slot >= 1; slot--) free.push(slot)
 
   const start = options.start ?? now()
-  for (const at of arrivalTimes(plan)) {
-    const intendedStart = start + at * 1000
+  const from = Math.max(0, (now() - start) / 1000)
+  for (const tick of schedule(load, from)) {
+    const intendedStart = start + tick.at * 1000
     const wait = intendedStart - now()
     if (wait > 0) {
       yield* Effect.sleep(wait)
     }
+    // A slice boundary: nothing to start, but sleeping until it means we
+    // never read the rate further ahead than one slice.
+    if (!tick.arrival) continue
     recorder.iterationOffered()
     const slot = free.pop()
     if (slot === undefined) {
@@ -121,11 +178,5 @@ export const runOpenModel = Effect.fn('runOpenModel')(function* (
     )
   }
 
-  // Hold until the plan's end, even if the last arrival came earlier.
-  const end = start + planDuration(plan) * 1000
-  const remaining = end - now()
-  if (remaining > 0) {
-    yield* Effect.sleep(remaining)
-  }
   return fibers
 })

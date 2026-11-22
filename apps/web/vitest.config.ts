@@ -10,7 +10,7 @@ export default defineProject({
     setupFiles: ['./src/vitest-setup.ts'],
     server: {
       deps: {
-        inline: ['foldkit', '@foldkit/ui', '@foldkit/devtools'],
+        inline: ['foldkit', '@foldkit/devtools'],
       },
     },
   },

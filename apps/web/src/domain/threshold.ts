@@ -76,7 +76,7 @@ export const isBreached = (threshold: Threshold, actual: number): boolean => {
 }
 
 /** A value in a metric's unit, as text: "412 ms", "2.1%", "96/s". */
-export const formatValue = (metric: Metric, value: number): string =>
+const formatValue = (metric: Metric, value: number): string =>
   metric === 'errors'
     ? Format.text(Format.percent(value / 100))
     : metric === 'rps'

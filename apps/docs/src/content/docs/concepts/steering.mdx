@@ -1,0 +1,85 @@
+---
+title: Steering a run
+description: Change the rate, add a spike, pause or pin a moment while a run is going, and how Mantix keeps steered runs reproducible.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+A run started from `mantix ui` can be **steered** while it is going: turn
+the rate up or down, add a short spike, pause and resume, or pin a moment
+with a note.
+
+Every change is a **control**, and every control you apply is added to the
+run's **journal**, with the second it happened. Mantix never edits the
+run in place: the load it generates is always computed from the plan in
+your test file plus the journal. So a steered run is still fully
+described, the timeline can draw each change as a flag, and the rest of
+the run can be drawn ahead of time, including a change you are only
+thinking about.
+
+## The controls
+
+| Control  | Fields                                             | What it does                                                                                                                               |
+| -------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Rate`   | `target`, `over?` (s), `scenario?`                 | Moves to `target` over `over` seconds (default: straight away) and holds it until the plan ends.                                           |
+| `Spike`  | `factor`, `duration` (s), `ramp?` (s), `scenario?` | Multiplies the load by `factor` for `duration` seconds, ramping in and out over `ramp` seconds (default 3), then goes back to what it was. |
+| `Pause`  |                                                    | Starts no new iterations. Requests already in flight finish normally.                                                                      |
+| `Resume` |                                                    | Carries on from where the plan was paused.                                                                                                 |
+| `Pin`    | `note`                                             | Marks the moment, e.g. "deploy started". Changes nothing else.                                                                             |
+
+`target` uses the plan's unit: iterations per second for `rate.*`
+scenarios, virtual users for `vus.*` ones. Without `scenario`, it is the
+total for the run, shared between the running scenarios in proportion to
+their current load, so a 3:1 mix stays 3:1.
+
+### Pausing moves the end
+
+A pause stops the plan's clock, not just the traffic. When you resume,
+the plan carries on from the same point: no catch-up burst of the
+iterations that "should" have happened while paused, and nothing is
+skipped. The run ends later by exactly the time spent paused. Ramps and
+spikes freeze during a pause too.
+
+<Aside>
+  In the closed model (`vus.*`) a pause keeps the virtual users alive and makes
+  them wait before their next iteration, so connections stay open and nothing in
+  flight is cancelled.
+</Aside>
+
+## From the command line
+
+The dashboard will post controls for you. Until then, or from a script,
+send them to the server that `mantix ui` started:
+
+```sh
+# Double the rate over 30 seconds
+curl -X POST localhost:4100/api/runs/<run id>/controls \
+  -H 'content-type: application/json' \
+  -d '{"_tag":"Rate","target":200,"over":30}'
+
+# Pin a moment
+curl -X POST localhost:4100/api/runs/<run id>/controls \
+  -H 'content-type: application/json' \
+  -d '{"_tag":"Pin","note":"deploy started"}'
+```
+
+The answer is the new journal entry (`seq`, `at` in seconds since the run
+started, and the control). A control that does not fit the run right now,
+such as `Resume` when nothing is paused, is refused with status 409 and a
+sentence saying why. Every open dashboard receives the new journal
+through the live stream.
+
+## Previewing a change
+
+`@mantix/api` exports the functions the engine itself uses, so a client
+can draw the rest of the run before a change is applied:
+
+```ts
+import { plannedPath } from '@mantix/api'
+
+// The dashed future path if the rate went to 300/s right now.
+const preview = plannedPath(run.plan, run.journal, secondsSinceStart, {
+  staged: { _tag: 'Rate', target: 300 },
+})
+preview.points // [{ t, target }, ...] up to preview.end
+```

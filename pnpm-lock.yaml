@@ -200,9 +200,6 @@ catalogs:
     '@foldkit/oxlint-plugin':
       specifier: 0.15.4
       version: 0.15.4
-    '@foldkit/ui':
-      specifier: 0.171.0
-      version: 0.171.0
     '@foldkit/vite-plugin':
       specifier: 0.29.1
       version: 0.29.1
@@ -215,6 +212,9 @@ catalogs:
     '@j178/prek':
       specifier: 0.5.11
       version: 0.5.11
+    '@playwright/test':
+      specifier: 1.65.1
+      version: 1.65.1
     '@tailwindcss/vite':
       specifier: 4.3.5
       version: 4.3.5
@@ -331,9 +331,6 @@ importers:
       '@effect/platform-browser':
         specifier: 'catalog:'
         version: 4.1.5(effect@4.1.5)
-      '@foldkit/ui':
-        specifier: 'catalog:'
-        version: 0.171.0(effect@4.1.5)(foldkit@0.171.0(@effect/platform-browser@4.1.5(effect@4.1.5))(effect@4.1.5))
       '@fontsource-variable/geist':
         specifier: 'catalog:'
         version: 5.3.0
@@ -383,6 +380,15 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 5.1.1(@types/node@24.19.2)(happy-dom@20.14.6)(vite@8.3.8(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))
+
+  e2e:
+    devDependencies:
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.65.1
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
 
   examples:
     dependencies:
@@ -1740,6 +1746,11 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@playwright/test@1.65.1':
+    resolution: {integrity: sha512-y+NCIRm2LvY4slUVWvGh1nujJ8RF/hEisIsq2mtUPgdQC4L701bq5hZGMhrpeXjACvwvO9tj5dJqhvM6TP9lbw==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   '@pnpm/deps.graph-sequencer@1100.0.1':
     resolution: {integrity: sha512-pOr5+q1fLYKwFN3LAJuGZEnfXDcQ73zqgDHMtGy+K+uIoUqyY+6MeDCWFwfu+4EFuq76I5EPFofoNAI+Bmmq4A==}
     engines: {node: '>=22.13'}
@@ -3074,6 +3085,16 @@ packages:
   picomatch@4.0.7:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
+
+  playwright-core@1.65.1:
+    resolution: {integrity: sha512-hqPpz7blSMPxWVdoeE1yiBSzXsKiVOd2k+kjCvmUywD2GPO2Dd9HfcWnq9NN0GHbNZDFgZ9JfBFr+X5/BLo0qw==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.65.1:
+    resolution: {integrity: sha512-vJ1FuoOrNwOKHUIVEvSt3jT1L+wjjDpwhwIstKtfvTh8XIG4FG4bIFuvNdMxi81LGfAhUgUZleVFaOLY4RIUUw==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   postcss-nested@7.0.2:
     resolution: {integrity: sha512-5osppouFc0VR9/VYzYxO03VaDa3e8F23Kfd6/9qcZTUI8P58GIYlArOET2Wq0ywSl2o2PjELhYOFI4W7l5QHKw==}
@@ -4625,6 +4646,10 @@ snapshots:
   '@pagefind/windows-x64@1.6.0':
     optional: true
 
+  '@playwright/test@1.65.1':
+    dependencies:
+      playwright: 1.65.1
+
   '@pnpm/deps.graph-sequencer@1100.0.1': {}
 
   '@quansync/fs@1.1.0':
@@ -6000,6 +6025,12 @@ snapshots:
   picomatch@2.3.2: {}
 
   picomatch@4.0.7: {}
+
+  playwright-core@1.65.1: {}
+
+  playwright@1.65.1:
+    dependencies:
+      playwright-core: 1.65.1
 
   postcss-nested@7.0.2(postcss@8.5.33):
     dependencies:

@@ -7,7 +7,13 @@
  */
 import { Array, Option, pipe } from 'effect'
 
-import { Histogram, type RunInfo, type Second } from '@mantix/api'
+import {
+  Histogram,
+  type RunInfo,
+  type Second,
+  countRequestErrors,
+  isLoad,
+} from '@mantix/api'
 
 import { plannedTotalAt } from '../domain/plan.ts'
 import { LAG_LIMIT_MS } from '../domain/stats.ts'
@@ -15,7 +21,7 @@ import * as Threshold from '../domain/threshold.ts'
 import type { TimelineData } from './store.ts'
 
 /** One second, boiled down to what the charts need. */
-export type SecondColumn = Readonly<{
+type SecondColumn = Readonly<{
   p50: number | null
   p99: number | null
   requests: number
@@ -29,7 +35,7 @@ export type SecondColumn = Readonly<{
   cells: ReadonlyArray<readonly [number, number]>
 }>
 
-export type LatencyLimit = Readonly<{ ms: number; failed: boolean }>
+type LatencyLimit = Readonly<{ ms: number; failed: boolean }>
 
 export type TimelineSeries = Readonly<{
   x: Array<number>
@@ -48,12 +54,13 @@ export type TimelineSeries = Readonly<{
 }>
 
 const toColumn = (second: Second): SecondColumn => {
-  const merged = Histogram.mergeAll(
-    second.endpoints.map(endpoint => endpoint.latency),
-  )
-  const requests = second.endpoints.reduce((sum, e) => sum + e.requests, 0)
-  const errors = second.endpoints.reduce(
-    (sum, e) => sum + Object.values(e.errors).reduce((a, b) => a + b, 0),
+  // The same rules as the summary: the timeline shows the load (no setup or
+  // teardown requests), and a ScriptError is not a failed request.
+  const endpoints = second.endpoints.filter(isLoad)
+  const merged = Histogram.mergeAll(endpoints.map(endpoint => endpoint.latency))
+  const requests = endpoints.reduce((sum, e) => sum + e.requests, 0)
+  const errors = endpoints.reduce(
+    (sum, e) => sum + countRequestErrors(e.errors),
     0,
   )
   const cells = merged.buckets.map(([index, count]) => {

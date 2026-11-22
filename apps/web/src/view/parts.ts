@@ -10,10 +10,10 @@ import type { Html, HtmlBuilder } from 'foldkit/html'
 import type * as Format from '../domain/format.ts'
 import type { Message } from '../message.ts'
 
-export const primaryButtonClass =
+const primaryButtonClass =
   'inline-flex h-8 items-center gap-2 rounded-md bg-ink px-3.5 text-[13px] font-medium text-paper transition-opacity duration-150 ease-out hover:opacity-85 disabled:cursor-default disabled:opacity-50'
 
-export const quietButtonClass =
+const quietButtonClass =
   'inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[13px] text-ink-2 transition-colors duration-150 ease-out hover:bg-wash hover:text-ink'
 
 export const primaryButton = (

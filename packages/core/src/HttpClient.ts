@@ -19,7 +19,15 @@ import { Effect, Exit } from 'effect'
 import { STATUS_CODES } from 'node:http'
 import { Agent, request } from 'undici'
 
+import type { Phase, RequestSpan, SchemaDiff } from '@mantix/api'
+
 import { toSeconds } from './Duration.ts'
+import {
+  type PhaseClock,
+  listenToPhases,
+  phasesOf,
+  withPhaseClock,
+} from './Phases.ts'
 import type { Recorder } from './Recorder.ts'
 import {
   type EffectHttp,
@@ -38,13 +46,16 @@ export const DEFAULT_TIMEOUT_MS = 10_000
  * matters: opening a new TCP connection per request would measure the
  * handshake, not the server.
  */
-export const makeAgent = (): Agent =>
-  new Agent({
+export const makeAgent = (): Agent => {
+  // Request phases for the waterfall come from undici's diagnostics.
+  listenToPhases()
+  return new Agent({
     keepAliveTimeout: 10_000,
     // Plenty of sockets per origin so the pool is not our bottleneck.
     connections: 1024,
     pipelining: 1,
   })
+}
 
 /** Everything a request needs that is the same for a whole scenario. */
 export interface ClientConfig {
@@ -55,6 +66,13 @@ export interface ClientConfig {
   readonly baseUrl: string | undefined
   readonly headers: Readonly<Record<string, string>> | undefined
   readonly timeoutMs: number
+  /**
+   * Set for the clients handed to setup and teardown. Their requests go
+   * through the same recorder as the load, labelled "GET /x (setup)", so
+   * they show up in the results without being mixed into the load's
+   * endpoints. See `isLoad` in @mantix/api.
+   */
+  readonly phase?: Phase | undefined
 }
 
 /**
@@ -81,6 +99,13 @@ export interface IterationTiming {
   readonly firstDelay: number | undefined
   /** Set when the first request has finished; later ones get no delay. */
   firstDone: boolean
+  /**
+   * When the iteration actually started (`now` ms). Only iterations have
+   * one; setup and teardown do not, and their requests are not traced.
+   */
+  readonly startedAt: number | undefined
+  /** Every request so far, for the iteration waterfall. */
+  readonly spans: Array<RequestSpan>
 }
 
 /**
@@ -97,6 +122,8 @@ export const makeTiming = (
       ? undefined
       : Math.max(0, startedAt - intendedStart),
   firstDone: false,
+  startedAt,
+  spans: [],
 })
 
 /** Fill `:name` placeholders. A missing value is a bug in the test. */
@@ -151,21 +178,66 @@ const flattenHeaders = (
 
 const defaultOk = (status: number): boolean => status >= 200 && status < 400
 
-/** A readable one-line description of the first schema issue. */
+/** Longest received value kept in a schema diff, in characters. */
+const MAX_RECEIVED = 120
+
+/** The keys of a Standard Schema issue path, as plain values. */
+const pathKeys = (issue: StandardSchemaV1.Issue): Array<PropertyKey> =>
+  (issue.path ?? []).map(segment =>
+    typeof segment === 'object' ? segment.key : segment,
+  )
+
+/** The type of a JSON value, in words. */
+const typeOf = (value: unknown): string =>
+  value === undefined
+    ? 'missing'
+    : value === null
+      ? 'null'
+      : Array.isArray(value)
+        ? 'array'
+        : typeof value
+
+/**
+ * Where the body differs from the schema, for the first issue: the path,
+ * what the schema library said, and the value that actually arrived there
+ * (cut short, so a huge body cannot bloat the data).
+ */
+const schemaDiff = (
+  issues: ReadonlyArray<StandardSchemaV1.Issue>,
+  body: unknown,
+): SchemaDiff | undefined => {
+  const first = issues[0]
+  if (first === undefined) return undefined
+  let path = '$'
+  let value: unknown = body
+  for (const key of pathKeys(first)) {
+    path += typeof key === 'number' ? `[${key}]` : `.${String(key)}`
+    value =
+      typeof value === 'object' && value !== null
+        ? (value as Record<PropertyKey, unknown>)[key]
+        : undefined
+  }
+  const json =
+    value === undefined ? '' : (JSON.stringify(value) ?? String(value))
+  return {
+    path,
+    expected: first.message,
+    received:
+      json.length > MAX_RECEIVED ? `${json.slice(0, MAX_RECEIVED)}…` : json,
+    receivedType: typeOf(value),
+  }
+}
+
+/** A readable one-line description of the schema issues. */
 const describeIssues = (
   issues: ReadonlyArray<StandardSchemaV1.Issue>,
+  diff: SchemaDiff | undefined,
 ): string => {
-  const first = issues[0]
-  if (first === undefined) {
+  if (diff === undefined) {
     return 'Response did not match the schema'
   }
-  let path = '$'
-  for (const segment of first.path ?? []) {
-    const key = typeof segment === 'object' ? segment.key : segment
-    path += typeof key === 'number' ? `[${key}]` : `.${String(key)}`
-  }
   const more = issues.length > 1 ? ` (+${issues.length - 1} more)` : ''
-  return `${path}: ${first.message}${more}`
+  return `${diff.path}: ${diff.expected}${more}`
 }
 
 /**
@@ -192,7 +264,9 @@ export const send = async <Body>(
   options: RequestOptions<Body>,
   signal: AbortSignal | undefined,
 ): Promise<HttpResponse<Body>> => {
-  const endpoint = options.name ?? `${method} ${path}`
+  const name = options.name ?? `${method} ${path}`
+  const endpoint =
+    config.phase === undefined ? name : `${name} (${config.phase})`
   // Bad input (a missing baseUrl, say) throws here, before anything is
   // recorded: it is a ScriptError, not a request failure.
   const url = buildUrl(config, path, options)
@@ -229,14 +303,36 @@ export const send = async <Body>(
     delay = timing.firstDelay
   }
 
+  // Filled in by undici's diagnostics while the request goes out.
+  const phaseClock: PhaseClock = {}
+
   const finish = (
     status: number | undefined,
-    error: { kind: RequestFailed['kind']; message: string } | undefined,
+    error:
+      | {
+          kind: RequestFailed['kind']
+          message: string
+          diff?: SchemaDiff | undefined
+        }
+      | undefined,
   ): void => {
     const latencyMs = config.now() - start
     timing.firstDone = true
+    if (timing.startedAt !== undefined) {
+      const phases = phasesOf(phaseClock, performance.now())
+      timing.spans.push({
+        endpoint,
+        start: Math.round((start - timing.startedAt) * 100) / 100,
+        duration: Math.round(latencyMs * 100) / 100,
+        ...(status === undefined ? {} : { status }),
+        ...(error === undefined ? {} : { error: error.kind }),
+        ...(phases === undefined ? {} : { phases }),
+        ...(phaseClock.newSocket === true ? { connected: true } : {}),
+      })
+    }
     config.recorder.recordRequest({
       endpoint,
+      phase: config.phase,
       latencyMs,
       correctedMs: latencyMs + delay,
       status,
@@ -248,8 +344,9 @@ export const send = async <Body>(
     kind: RequestFailed['kind'],
     message: string,
     status?: number,
+    diff?: SchemaDiff,
   ): RequestFailed => {
-    finish(status, { kind, message })
+    finish(status, { kind, message, diff })
     return new RequestFailed({
       kind,
       endpoint,
@@ -263,13 +360,16 @@ export const send = async <Body>(
     let responseHeaders: Record<string, string>
     let text: string
     try {
-      const response = await request(url, {
-        method: method as 'GET',
-        headers,
-        body: body ?? null,
-        signal: controller.signal,
-        dispatcher: config.agent,
-      })
+      // withPhaseClock links undici's diagnostics events to this request.
+      const response = await withPhaseClock(phaseClock, () =>
+        request(url, {
+          method: method as 'GET',
+          headers,
+          body: body ?? null,
+          signal: controller.signal,
+          dispatcher: config.agent,
+        }),
+      )
       status = response.statusCode
       responseHeaders = flattenHeaders(response.headers)
       text = await response.body.text()
@@ -315,7 +415,13 @@ export const send = async <Body>(
       let result = options.expect['~standard'].validate(parsed)
       if (result instanceof Promise) result = await result
       if (result.issues !== undefined) {
-        throw fail('SchemaMismatch', describeIssues(result.issues), status)
+        const diff = schemaDiff(result.issues, parsed)
+        throw fail(
+          'SchemaMismatch',
+          describeIssues(result.issues, diff),
+          status,
+          diff,
+        )
       }
       parsed = result.value
     }

@@ -11,6 +11,8 @@
  * - An Effect scenario is used as it is.
  */
 import { Cause, Data, Effect, type Exit } from 'effect'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   type ClientConfig,
@@ -51,6 +53,32 @@ const wrapError = <A, E>(
 /** A readable message for anything a test might throw. */
 export const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
+
+// The engine's own source folder: stack frames inside it are Mantix, not
+// the test.
+const ENGINE_DIR = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * The line of the test file where an error was thrown, e.g.
+ * "checkout.ts:42", read from the stack. Frames inside Node, node_modules
+ * or Mantix itself are skipped, so it points at the test author's code.
+ */
+const locationOf = (error: unknown): string | undefined => {
+  if (!(error instanceof Error) || error.stack === undefined) return undefined
+  for (const line of error.stack.split('\n').slice(1)) {
+    // "at fn (file:///a/b/checkout.ts:42:13)" or "at file:///a/b.ts:42:13"
+    const match = /\(?((?:file:\/\/)?\/[^()]*?):(\d+):\d+\)?\s*$/.exec(line)
+    if (match === null) continue
+    const file = match[1]!.startsWith('file:')
+      ? fileURLToPath(match[1]!)
+      : match[1]!
+    if (file.includes('/node_modules/') || file.startsWith(ENGINE_DIR)) {
+      continue
+    }
+    return `${file.split('/').pop()}:${match[2]}`
+  }
+  return undefined
+}
 
 /** Find the first real error in a Cause (a failure or a defect). */
 const errorOf = (cause: Cause.Cause<unknown>): unknown => {
@@ -93,9 +121,9 @@ export const prepareScenario = (
   const body = (
     data: unknown,
     vu: number,
+    iteration: number,
     timing: IterationTiming,
   ): Effect.Effect<void, Thrown> => {
-    const iteration = nextCount(vu)
     if (scenario._tag === 'AsyncScenario') {
       return fromAsync(signal =>
         scenario.options.iteration({
@@ -129,38 +157,74 @@ export const prepareScenario = (
   }
 
   // Record how an iteration ended.
-  const recordOutcome = (exit: Exit.Exit<void, Thrown>): void => {
+  const recordOutcome = (
+    exit: Exit.Exit<void, Thrown>,
+  ): 'completed' | 'failed' | 'interrupted' => {
     if (exit._tag === 'Success') {
       recorder.iterationEnded('completed')
-      return
+      return 'completed'
     }
     if (Cause.hasInterruptsOnly(exit.cause)) {
       recorder.iterationEnded('interrupted')
-      return
+      return 'interrupted'
     }
     const error = errorOf(exit.cause)
     if (error instanceof RequestCancelled) {
       recorder.iterationEnded('interrupted')
-    } else if (error instanceof RequestFailed) {
+      return 'interrupted'
+    }
+    if (error instanceof RequestFailed) {
       // Already recorded by the http client.
       recorder.iterationEnded('failed')
     } else {
       // The test code threw: its bug, not the server's. It is counted as a
       // failed iteration but never as a request error.
       recorder.iterationEnded('failed')
-      recorder.sample(scriptLabel, 'ScriptError', messageOf(error))
+      const location = locationOf(error)
+      recorder.sample(
+        scriptLabel,
+        'ScriptError',
+        messageOf(error),
+        location === undefined ? {} : { location },
+      )
     }
+    return 'failed'
   }
 
   const iteration = (data: unknown, vu: number, intendedStart?: number) =>
     Effect.suspend(() => {
-      recorder.iterationStarted()
-      return body(data, vu, makeTiming(intendedStart, config.now())).pipe(
-        Effect.onExit(exit => Effect.sync(() => recordOutcome(exit))),
+      const startedAt = config.now()
+      const timing = makeTiming(intendedStart, startedAt)
+      const count = nextCount(vu)
+      recorder.iterationStarted(timing.firstDelay)
+      // When it ended: record the outcome, and offer the iteration for the
+      // waterfall (the recorder keeps the slowest of each second).
+      const onEnd = (exit: Exit.Exit<void, Thrown>) => {
+        const outcome = recordOutcome(exit)
+        if (outcome === 'interrupted') return
+        const end = config.now()
+        recorder.offerTrace({
+          scenario: name,
+          vu,
+          iteration: count,
+          lateMs: Math.round((timing.firstDelay ?? 0) * 100) / 100,
+          duration:
+            Math.round((end - (intendedStart ?? startedAt)) * 100) / 100,
+          outcome,
+          spans: [...timing.spans].sort((a, b) => a.start - b.start),
+        })
+      }
+      return body(data, vu, count, timing).pipe(
+        Effect.onExit(exit => Effect.sync(() => onEnd(exit))),
         // The outcome is recorded; the error itself is not needed any more.
         Effect.ignoreCause,
       )
     })
+
+  // Setup and teardown send requests through the same client and recorder
+  // as the load; the phase only labels them (see ClientConfig.phase).
+  const setupConfig: ClientConfig = { ...config, phase: 'setup' }
+  const teardownConfig: ClientConfig = { ...config, phase: 'teardown' }
 
   const setup: Effect.Effect<unknown, SetupFailed> =
     scenario.options.setup === undefined
@@ -168,13 +232,13 @@ export const prepareScenario = (
       : (scenario._tag === 'AsyncScenario'
           ? fromAsync(signal =>
               scenario.options.setup!({
-                http: makeHttp(config, makeTiming(), signal),
+                http: makeHttp(setupConfig, makeTiming(), signal),
                 signal,
               }),
             )
           : Effect.suspend(() =>
               scenario.options.setup!({
-                http: makeEffectHttp(config, makeTiming()),
+                http: makeEffectHttp(setupConfig, makeTiming()),
                 signal: new AbortController().signal,
               }).pipe(wrapError),
             )
@@ -199,14 +263,14 @@ export const prepareScenario = (
       scenario._tag === 'AsyncScenario'
         ? fromAsync(signal =>
             scenario.options.teardown!({
-              http: makeHttp(config, makeTiming(), signal),
+              http: makeHttp(teardownConfig, makeTiming(), signal),
               signal,
               data,
             }),
           )
         : Effect.suspend(() =>
             scenario.options.teardown!({
-              http: makeEffectHttp(config, makeTiming()),
+              http: makeEffectHttp(teardownConfig, makeTiming()),
               signal: new AbortController().signal,
               data,
             }).pipe(wrapError),

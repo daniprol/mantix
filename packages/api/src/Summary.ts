@@ -9,7 +9,12 @@ import { Schema } from 'effect'
 
 import * as Histogram from './Histogram.ts'
 import { RunInfo } from './Run.ts'
-import type { EndpointSecond, Second } from './Second.ts'
+import {
+  type EndpointSecond,
+  type Second,
+  countRequestErrors,
+  isLoad,
+} from './Second.ts'
 
 /** Latency figures for a window, in milliseconds. */
 export const LatencyStats = Schema.Struct({
@@ -24,9 +29,9 @@ export type LatencyStats = typeof LatencyStats.Type
 export const EndpointStats = Schema.Struct({
   endpoint: Schema.String,
   requests: Schema.Finite,
-  /** Failed requests. */
+  /** Failed requests. ScriptErrors (bugs in the test) are not included. */
   errors: Schema.Finite,
-  /** errors / requests, from 0 to 1. */
+  /** errors / requests, from 0 to 1. What the `errors` threshold checks. */
   errorRate: Schema.Finite,
   /** Requests per second over the window. */
   rps: Schema.Finite,
@@ -34,7 +39,7 @@ export const EndpointStats = Schema.Struct({
   latency: LatencyStats,
   /** Latency from actual send, shown for comparison. */
   uncorrected: LatencyStats,
-  /** Failed requests by error class. */
+  /** Errors by class, ScriptErrors included, so they are still shown. */
   errorsByKind: Schema.Record(Schema.String, Schema.Finite),
 })
 export type EndpointStats = typeof EndpointStats.Type
@@ -88,7 +93,8 @@ const statsFor = (
     requests += part.requests
     addCounts(errorsByKind, part.errors)
   }
-  const errors = Object.values(errorsByKind).reduce((a, b) => a + b, 0)
+  // Only server and transport failures count; see isRequestError.
+  const errors = countRequestErrors(errorsByKind)
   return {
     endpoint,
     requests,
@@ -105,7 +111,8 @@ const statsFor = (
 
 /**
  * Stats per endpoint (sorted by name) and for all endpoints together, over
- * any list of Seconds. Pass a slice to summarise a window.
+ * any list of Seconds. Pass a slice to summarise a window. The total covers
+ * the load only, without setup and teardown requests.
  *
  * `elapsedSeconds` is what req/s divides by. It defaults to the number of
  * Seconds; pass the planned duration to ignore the short extra Second in
@@ -125,7 +132,9 @@ export const summarizeSeconds = (
       const list = byEndpoint.get(part.endpoint) ?? []
       list.push(part)
       byEndpoint.set(part.endpoint, list)
-      all.push(part)
+      // Setup and teardown requests get their own rows, but not a share
+      // of the totals; see isLoad.
+      if (isLoad(part)) all.push(part)
     }
   }
   const count = elapsedSeconds

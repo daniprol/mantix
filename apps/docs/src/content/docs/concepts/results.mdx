@@ -98,6 +98,23 @@ interesting part, so Mantix shows it instead of picking one silently.
 With the closed model (`vus.*`) there is no schedule to be late against, so
 the two numbers match. That is one more reason to prefer the open model.
 
+## When Mantix itself is the bottleneck
+
+A load generator that is too busy measures its own delays along with the
+server's. So every second, Mantix also checks on itself, and marks the
+second as **untrusted** when any of these went over its limit:
+
+| Check       | Limit          | What it means                                       |
+| ----------- | -------------- | --------------------------------------------------- |
+| Loop lag    | 100 ms         | The event loop was blocked, so timers fired late.   |
+| Late starts | 50 ms          | Iterations started well after their scheduled time. |
+| CPU         | 90 % of a core | The Mantix process was close to using a whole core. |
+| GC          | 100 ms         | Garbage collection paused the process for a while.  |
+
+Nothing is thrown away. The dashboard hatches untrusted stretches on every
+lane, and `mantix run` prints `untrusted: cpu, gc` on those seconds. If
+you see them often, lower the load per machine or simplify the iteration.
+
 ## Low sample counts
 
 A p99 computed from 40 requests is not a p99; it is roughly the
@@ -112,3 +129,19 @@ A failure is recorded once, with a kind: `Transport`, `Timeout`,
 separate kind, `ScriptError`, and never count as server errors. When a run
 fails its `errors < 1%` threshold, you can see straight away whether the
 server returned 503s, timed out, or sent a body of the wrong shape.
+
+### Grouped by fingerprint
+
+Thousands of failures are usually a handful of problems. Each error gets
+a **fingerprint**: its kind, its endpoint, and its message with the parts
+that change every time (ids, numbers, quoted values) blanked out. Schema
+mismatches are grouped by path, so `$.items[3].price` and
+`$.items[7].price` are one problem, and they keep a small diff: the exact
+path, what the schema expected and the value that arrived (cut to 120
+characters). Script errors keep the line of your test file that threw,
+such as `checkout.ts:42`.
+
+Every second counts its errors per fingerprint and always keeps at least
+one example of each, so a rare error is never pushed out by a noisy one.
+Each group then keeps its first few examples, its last few, and a few
+from the middle.

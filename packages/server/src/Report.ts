@@ -9,10 +9,13 @@
 import { styleText } from 'node:util'
 
 import {
+  type GeneratorIssue,
   Histogram,
   type RunInfo,
   type RunSummary,
   type Second,
+  countRequestErrors,
+  isLoad,
 } from '@mantix/api'
 
 type Style = Parameters<typeof styleText>[0]
@@ -51,13 +54,15 @@ export const secondLine = (
   second: Second,
   model: 'rate' | 'vus' | 'mixed',
 ): string => {
+  // The load only, like the totals: setup and teardown are left out.
+  const loadParts = second.endpoints.filter(isLoad)
   let requests = 0
   let errors = 0
-  for (const part of second.endpoints) {
+  for (const part of loadParts) {
     requests += part.requests
-    for (const count of Object.values(part.errors)) errors += count
+    errors += countRequestErrors(part.errors)
   }
-  const latency = Histogram.mergeAll(second.endpoints.map(e => e.latency))
+  const latency = Histogram.mergeAll(loadParts.map(e => e.latency))
   const p99 =
     latency.count === 0
       ? '–'
@@ -82,11 +87,25 @@ export const secondLine = (
     parts.push(paint('yellow', `dropped ${integer.format(second.dropped)}`))
   }
   // The generator itself was too busy: these numbers are less trustworthy.
-  if (second.loopLagMs >= 50) {
+  const issues = second.generator?.issues ?? []
+  if (issues.length > 0) {
+    parts.push(
+      paint('yellow', `untrusted: ${issues.map(issueLabel).join(', ')}`),
+    )
+  } else if (second.loopLagMs >= 50) {
     parts.push(paint('yellow', `loop lag ${second.loopLagMs.toFixed(0)} ms`))
   }
   return parts.join('   ')
 }
+
+/** Short words for why a second is not trusted. */
+const issueLabel = (issue: GeneratorIssue): string =>
+  ({
+    LoopLag: 'loop lag',
+    LateStarts: 'late starts',
+    Cpu: 'cpu',
+    Gc: 'gc',
+  })[issue]
 
 /** Pad cells so the columns line up; the first column is left aligned. */
 const table = (rows: ReadonlyArray<ReadonlyArray<string>>): Array<string> => {
