@@ -1,4 +1,9 @@
-# Mantix
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/mantix-logo-dark.svg">
+    <img alt="Mantix" src="assets/logo/mantix-logo-light.svg" height="64">
+  </picture>
+</h1>
 
 Load tests that tell the truth, written in the TypeScript you already have.
 

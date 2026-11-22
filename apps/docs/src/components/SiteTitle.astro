@@ -1,15 +1,17 @@
 ---
 /**
- * Override of Starlight's SiteTitle: the wordmark with the amber "live dot"
- * (the same dot the dashboard shows while a run is going) and a small
- * pre-release tag, because Mantix is not on npm yet.
+ * Override of Starlight's SiteTitle: the Mantix logo (one file per theme,
+ * from public/logo) and a small pre-release tag, because Mantix is not on
+ * npm yet.
  */
+import { withBase } from '../lib/base.ts'
+
 const { siteTitleHref } = Astro.locals.starlightRoute
 ---
 
 <a href={siteTitleHref} class="site-title" translate="no">
-  <span class="dot" aria-hidden="true"></span>
-  <span class="word">mantix</span>
+  <img class="logo logo-dark" src={withBase('/logo/mantix-logo-dark.svg')} alt="Mantix" width="134" height="28" />
+  <img class="logo logo-light" src={withBase('/logo/mantix-logo-light.svg')} alt="Mantix" width="134" height="28" />
   <span class="tag">pre-release</span>
 </a>
 
@@ -17,21 +19,20 @@ const { siteTitleHref } = Astro.locals.starlightRoute
   .site-title {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
     text-decoration: none;
     color: var(--mx-ink);
     white-space: nowrap;
   }
-  .dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 50%;
-    background: var(--mx-accent);
+  .logo {
+    display: block;
+    height: 1.75rem;
+    width: auto;
   }
-  .word {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    letter-spacing: -0.02em;
+  /* Dark is Starlight's default theme; light is data-theme='light'. */
+  :global(:root[data-theme='light']) .logo-dark,
+  :global(:root:not([data-theme='light'])) .logo-light {
+    display: none;
   }
   .tag {
     font-family: var(--__sl-font-mono);
