@@ -40,6 +40,11 @@ describe('steering', () => {
           result.info.journal.map(e => e.control._tag),
           ['Rate', 'Pin'],
         )
+        // Every second also says how the generator itself was doing.
+        const health = result.seconds[0]!.generator
+        assert.isDefined(health)
+        assert.isAtLeast(health!.heapMb, 1)
+        assert.isArray(health!.issues)
       }),
     ),
   )

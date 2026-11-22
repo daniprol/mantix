@@ -56,6 +56,42 @@ export const ErrorSample = Schema.Struct({
 })
 export type ErrorSample = typeof ErrorSample.Type
 
+/**
+ * Why a second's numbers should not be trusted. Each one means Mantix
+ * itself (the load generator) was struggling, so slow responses in that
+ * second may be our fault, not the server's.
+ *
+ * - LoopLag: the event loop was blocked for a long stretch.
+ * - LateStarts: iterations started well after their scheduled time.
+ * - Cpu: the Mantix process used (nearly) a whole CPU core.
+ * - Gc: garbage collection paused the process for a long time.
+ */
+export const GeneratorIssue = Schema.Literals([
+  'LoopLag',
+  'LateStarts',
+  'Cpu',
+  'Gc',
+])
+export type GeneratorIssue = typeof GeneratorIssue.Type
+
+/** How the load generator itself was doing during one second. */
+export const GeneratorHealth = Schema.Struct({
+  /** CPU used by the Mantix process, in % of one core (can exceed 100). */
+  cpuPercent: Schema.Finite,
+  /** Time spent paused in garbage collection, in ms. */
+  gcMs: Schema.Finite,
+  /** JavaScript heap in use when the second closed, in MB. */
+  heapMb: Schema.Finite,
+  /**
+   * The latest an iteration started compared to its schedule, in ms
+   * (open model only; 0 in the closed model).
+   */
+  lateStartMs: Schema.Finite,
+  /** Empty when the second can be trusted. */
+  issues: Schema.Array(GeneratorIssue),
+})
+export type GeneratorHealth = typeof GeneratorHealth.Type
+
 export const Second = Schema.Struct({
   /** Whole seconds since the run started: 0 is the first second. */
   t: Schema.Finite,
@@ -81,6 +117,11 @@ export const Second = Schema.Struct({
    * this second should not be trusted.
    */
   loopLagMs: Schema.Finite,
+  /**
+   * The generator's own health, and whether to trust this second. Absent
+   * in data recorded before Mantix measured it.
+   */
+  generator: Schema.optionalKey(GeneratorHealth),
   /** Per-endpoint results. */
   endpoints: Schema.Array(EndpointSecond),
   /** A few example errors from this second (at most a handful). */
