@@ -43,6 +43,7 @@ export {
   type Threshold,
   type ThresholdInput,
 } from './Thresholds.ts'
+export { probe } from './Probe.ts'
 export {
   applyOverrides,
   InvalidTest,

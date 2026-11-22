@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { RunInfo, TestInfo } from '@mantix/api'
 import { rate, scenario } from '@mantix/core'
 
+import { DevEvents } from '../src/DevEvents.ts'
 import { Runs } from '../src/Runs.ts'
 import { ApiRoutes } from '../src/Server.ts'
 
@@ -36,7 +37,7 @@ beforeAll(async () => {
   // we can call it without opening a port.
   ;({ handler, dispose } = HttpRouter.toWebHandler(
     ApiRoutes.pipe(
-      Layer.provide(Runs.layer(test, 'tiny.ts')),
+      Layer.provide([Runs.layer(test, 'tiny.ts'), DevEvents.idle]),
       Layer.provide(HttpServer.layerServices),
     ),
   ))

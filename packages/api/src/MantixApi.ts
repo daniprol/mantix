@@ -17,6 +17,7 @@ import {
   OpenApi,
 } from 'effect/http-api'
 
+import { DevEvent } from './Dev.ts'
 import { Control, JournalEntry } from './Journal.ts'
 import { RunEvent, RunInfo, RunOverrides, TestInfo } from './Run.ts'
 
@@ -96,8 +97,22 @@ export class RunsGroup extends HttpApiGroup.make('runs')
   )
   .annotateMerge(OpenApi.annotations({ title: 'Runs' })) {}
 
+/**
+ * `mantix dev`: one event every time the test file is saved. It first
+ * sends the latest event, if any. Under `mantix ui` it stays silent.
+ */
+export class DevGroup extends HttpApiGroup.make('dev').add(
+  HttpApiEndpoint.get('events', '/dev/events', {
+    success: HttpApiSchema.StreamSse({
+      data: DevEvent,
+      keepAlive: '15 seconds',
+    }),
+  }),
+) {}
+
 export class MantixApi extends HttpApi.make('mantix')
   .add(TestGroup)
   .add(RunsGroup)
+  .add(DevGroup)
   .prefix('/api')
   .annotateMerge(OpenApi.annotations({ title: 'Mantix API' })) {}

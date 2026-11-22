@@ -221,8 +221,13 @@ const RunsHandlers = HttpApiBuilder.group(MantixApi, 'runs', handlers =>
     ),
 )
 
+// The mock has no file watcher, so the dev stream stays quiet.
+const DevHandlers = HttpApiBuilder.group(MantixApi, 'dev', handlers =>
+  handlers.handle('events', () => Effect.succeed(Stream.never)),
+)
+
 const ApiRoutes = HttpApiBuilder.layer(MantixApi).pipe(
-  Layer.provide([TestHandlers, RunsHandlers]),
+  Layer.provide([TestHandlers, RunsHandlers, DevHandlers]),
 )
 
 const Server = HttpRouter.serve(ApiRoutes).pipe(

@@ -116,6 +116,37 @@ dashboard](/mantix/start/dashboard/).
 
 The server only listens on your machine. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd>.
 
+## mantix dev
+
+Everything `mantix ui` does, plus a watcher that lets you test your test
+while you write it.
+
+```sh
+mantix dev <file> [--port 4100]
+```
+
+When it starts, and then every time you save the test file or any file in
+its folder, Mantix reloads the test, runs each scenario's `setup`, **one**
+iteration and `teardown`, and prints that iteration as a small waterfall:
+
+```text
+  ↻ examples/checkout.ts · checkout · 4 requests in 183 ms ✓
+    GET /products/:sku  200     41 ms  ▕███████                         ▏
+    POST /cart/items    200     50 ms  ▕       █████████                ▏
+    GET /cart/:id       200     33 ms  ▕                ██████          ▏
+    POST /checkout      200     57 ms  ▕                      ██████████▏
+```
+
+Errors follow in plain words, such as a schema mismatch with the value
+that arrived, or a script error with the line of your file that threw. If
+the file does not load (a syntax error, say), Mantix says why and keeps the
+last version that worked. A run you start from the dashboard always uses
+the latest version.
+
+Files you import from the same folder are reloaded too. Packages in
+`node_modules` are not, so restart `mantix dev` after installing or
+updating one.
+
 ## The demo target
 
 Not part of the CLI, but you will use it with every example in these docs:
