@@ -4,6 +4,7 @@ import { TestClock } from 'effect/testing'
 import { assert, describe, it } from '@effect/vitest'
 
 import { toPlan, vus } from '../src/Load.ts'
+import { planLoad } from '../src/Scheduler.ts'
 import { runClosedModel } from '../src/VuPool.ts'
 
 describe('runClosedModel', () => {
@@ -19,14 +20,16 @@ describe('runClosedModel', () => {
         Effect.scoped(
           runClosedModel({
             // 0 → 10 VUs over 10 s, then back to 0 over 10 s.
-            plan: toPlan(
-              vus.ramping({
-                start: 0,
-                stages: [
-                  { duration: 10, target: 10 },
-                  { duration: 10, target: 0 },
-                ],
-              }),
+            load: planLoad(
+              toPlan(
+                vus.ramping({
+                  start: 0,
+                  stages: [
+                    { duration: 10, target: 10 },
+                    { duration: 10, target: 0 },
+                  ],
+                }),
+              ),
             ),
             now,
             // An iteration takes 250 ms; we track which VUs are running.
@@ -67,7 +70,7 @@ describe('runClosedModel', () => {
       const fiber = yield* Effect.forkChild(
         Effect.scoped(
           runClosedModel({
-            plan: toPlan(vus.constant(2, { duration: 1 })),
+            load: planLoad(toPlan(vus.constant(2, { duration: 1 }))),
             now,
             iteration: vu =>
               Effect.sleep(100).pipe(

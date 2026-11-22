@@ -46,6 +46,7 @@ const run: RunInfo = {
   duration: 1,
   plan: [],
   thresholds: [{ expression: 'p99 < 10ms', actual: 20.8, passed: false }],
+  journal: [],
 }
 
 describe('report', () => {

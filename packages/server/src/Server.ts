@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { NodeHttpServer } from '@effect/platform-node'
 import { MantixApi } from '@mantix/api'
 
+import { DevEvents } from './DevEvents.ts'
 import { Runs } from './Runs.ts'
 
 const TestHandlers = HttpApiBuilder.group(
@@ -24,7 +25,7 @@ const TestHandlers = HttpApiBuilder.group(
   'test',
   Effect.fn(function* (handlers) {
     const runs = yield* Runs
-    return handlers.handle('get', () => Effect.succeed(runs.test))
+    return handlers.handle('get', () => runs.test)
   }),
 )
 
@@ -41,16 +42,26 @@ const RunsHandlers = HttpApiBuilder.group(
         ),
       list: () => runs.list,
       get: ({ params }) => runs.get(params.id),
+      control: ({ params, payload }) => runs.control(params.id, payload),
       stop: ({ params }) => runs.stop(params.id),
       events: ({ params }) => runs.events(params.id),
     })
   }),
 )
 
+const DevHandlers = HttpApiBuilder.group(
+  MantixApi,
+  'dev',
+  Effect.fn(function* (handlers) {
+    const dev = yield* DevEvents
+    return handlers.handle('events', () => Effect.succeed(dev.events))
+  }),
+)
+
 /** The HTTP API under /api, without the dashboard files. */
 export const ApiRoutes = HttpApiBuilder.layer(MantixApi, {
   openapiPath: '/api/openapi.json',
-}).pipe(Layer.provide([TestHandlers, RunsHandlers]))
+}).pipe(Layer.provide([TestHandlers, RunsHandlers, DevHandlers]))
 
 /**
  * Where the built dashboard lives. In the published package it is copied
