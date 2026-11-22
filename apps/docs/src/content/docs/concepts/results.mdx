@@ -129,3 +129,19 @@ A failure is recorded once, with a kind: `Transport`, `Timeout`,
 separate kind, `ScriptError`, and never count as server errors. When a run
 fails its `errors < 1%` threshold, you can see straight away whether the
 server returned 503s, timed out, or sent a body of the wrong shape.
+
+### Grouped by fingerprint
+
+Thousands of failures are usually a handful of problems. Each error gets
+a **fingerprint**: its kind, its endpoint, and its message with the parts
+that change every time (ids, numbers, quoted values) blanked out. Schema
+mismatches are grouped by path, so `$.items[3].price` and
+`$.items[7].price` are one problem, and they keep a small diff: the exact
+path, what the schema expected and the value that arrived (cut to 120
+characters). Script errors keep the line of your test file that threw,
+such as `checkout.ts:42`.
+
+Every second counts its errors per fingerprint and always keeps at least
+one example of each, so a rare error is never pushed out by a noisy one.
+Each group then keeps its first few examples, its last few, and a few
+from the middle.

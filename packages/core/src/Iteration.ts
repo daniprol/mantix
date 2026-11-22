@@ -11,6 +11,8 @@
  * - An Effect scenario is used as it is.
  */
 import { Cause, Data, Effect, type Exit } from 'effect'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   type ClientConfig,
@@ -51,6 +53,32 @@ const wrapError = <A, E>(
 /** A readable message for anything a test might throw. */
 export const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
+
+// The engine's own source folder: stack frames inside it are Mantix, not
+// the test.
+const ENGINE_DIR = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * The line of the test file where an error was thrown, e.g.
+ * "checkout.ts:42", read from the stack. Frames inside Node, node_modules
+ * or Mantix itself are skipped, so it points at the test author's code.
+ */
+export const locationOf = (error: unknown): string | undefined => {
+  if (!(error instanceof Error) || error.stack === undefined) return undefined
+  for (const line of error.stack.split('\n').slice(1)) {
+    // "at fn (file:///a/b/checkout.ts:42:13)" or "at file:///a/b.ts:42:13"
+    const match = /\(?((?:file:\/\/)?\/[^()]*?):(\d+):\d+\)?\s*$/.exec(line)
+    if (match === null) continue
+    const file = match[1]!.startsWith('file:')
+      ? fileURLToPath(match[1]!)
+      : match[1]!
+    if (file.includes('/node_modules/') || file.startsWith(ENGINE_DIR)) {
+      continue
+    }
+    return `${file.split('/').pop()}:${match[2]}`
+  }
+  return undefined
+}
 
 /** Find the first real error in a Cause (a failure or a defect). */
 const errorOf = (cause: Cause.Cause<unknown>): unknown => {
@@ -148,7 +176,13 @@ export const prepareScenario = (
       // The test code threw: its bug, not the server's. It is counted as a
       // failed iteration but never as a request error.
       recorder.iterationEnded('failed')
-      recorder.sample(scriptLabel, 'ScriptError', messageOf(error))
+      const location = locationOf(error)
+      recorder.sample(
+        scriptLabel,
+        'ScriptError',
+        messageOf(error),
+        location === undefined ? {} : { location },
+      )
     }
   }
 

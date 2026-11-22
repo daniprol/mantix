@@ -19,6 +19,8 @@ import { Effect, Exit } from 'effect'
 import { STATUS_CODES } from 'node:http'
 import { Agent, request } from 'undici'
 
+import type { SchemaDiff } from '@mantix/api'
+
 import { toSeconds } from './Duration.ts'
 import type { Recorder } from './Recorder.ts'
 import {
@@ -151,21 +153,66 @@ const flattenHeaders = (
 
 const defaultOk = (status: number): boolean => status >= 200 && status < 400
 
-/** A readable one-line description of the first schema issue. */
+/** Longest received value kept in a schema diff, in characters. */
+const MAX_RECEIVED = 120
+
+/** The keys of a Standard Schema issue path, as plain values. */
+const pathKeys = (issue: StandardSchemaV1.Issue): Array<PropertyKey> =>
+  (issue.path ?? []).map(segment =>
+    typeof segment === 'object' ? segment.key : segment,
+  )
+
+/** The type of a JSON value, in words. */
+const typeOf = (value: unknown): string =>
+  value === undefined
+    ? 'missing'
+    : value === null
+      ? 'null'
+      : Array.isArray(value)
+        ? 'array'
+        : typeof value
+
+/**
+ * Where the body differs from the schema, for the first issue: the path,
+ * what the schema library said, and the value that actually arrived there
+ * (cut short, so a huge body cannot bloat the data).
+ */
+export const schemaDiff = (
+  issues: ReadonlyArray<StandardSchemaV1.Issue>,
+  body: unknown,
+): SchemaDiff | undefined => {
+  const first = issues[0]
+  if (first === undefined) return undefined
+  let path = '$'
+  let value: unknown = body
+  for (const key of pathKeys(first)) {
+    path += typeof key === 'number' ? `[${key}]` : `.${String(key)}`
+    value =
+      typeof value === 'object' && value !== null
+        ? (value as Record<PropertyKey, unknown>)[key]
+        : undefined
+  }
+  const json =
+    value === undefined ? '' : (JSON.stringify(value) ?? String(value))
+  return {
+    path,
+    expected: first.message,
+    received:
+      json.length > MAX_RECEIVED ? `${json.slice(0, MAX_RECEIVED)}…` : json,
+    receivedType: typeOf(value),
+  }
+}
+
+/** A readable one-line description of the schema issues. */
 const describeIssues = (
   issues: ReadonlyArray<StandardSchemaV1.Issue>,
+  diff: SchemaDiff | undefined,
 ): string => {
-  const first = issues[0]
-  if (first === undefined) {
+  if (diff === undefined) {
     return 'Response did not match the schema'
   }
-  let path = '$'
-  for (const segment of first.path ?? []) {
-    const key = typeof segment === 'object' ? segment.key : segment
-    path += typeof key === 'number' ? `[${key}]` : `.${String(key)}`
-  }
   const more = issues.length > 1 ? ` (+${issues.length - 1} more)` : ''
-  return `${path}: ${first.message}${more}`
+  return `${diff.path}: ${diff.expected}${more}`
 }
 
 /**
@@ -231,7 +278,13 @@ export const send = async <Body>(
 
   const finish = (
     status: number | undefined,
-    error: { kind: RequestFailed['kind']; message: string } | undefined,
+    error:
+      | {
+          kind: RequestFailed['kind']
+          message: string
+          diff?: SchemaDiff | undefined
+        }
+      | undefined,
   ): void => {
     const latencyMs = config.now() - start
     timing.firstDone = true
@@ -248,8 +301,9 @@ export const send = async <Body>(
     kind: RequestFailed['kind'],
     message: string,
     status?: number,
+    diff?: SchemaDiff,
   ): RequestFailed => {
-    finish(status, { kind, message })
+    finish(status, { kind, message, diff })
     return new RequestFailed({
       kind,
       endpoint,
@@ -315,7 +369,13 @@ export const send = async <Body>(
       let result = options.expect['~standard'].validate(parsed)
       if (result instanceof Promise) result = await result
       if (result.issues !== undefined) {
-        throw fail('SchemaMismatch', describeIssues(result.issues), status)
+        const diff = schemaDiff(result.issues, parsed)
+        throw fail(
+          'SchemaMismatch',
+          describeIssues(result.issues, diff),
+          status,
+          diff,
+        )
       }
       parsed = result.value
     }
