@@ -4,6 +4,7 @@
  */
 import { Schema } from 'effect'
 
+import { JournalEntry } from './Journal.ts'
 import { Second } from './Second.ts'
 
 /**
@@ -103,6 +104,11 @@ export const RunInfo = Schema.Struct({
   plan: Schema.Array(ScenarioInfo),
   /** Threshold results. Updated live while running. */
   thresholds: Schema.Array(ThresholdResult),
+  /**
+   * Every live change (rate, spike, pause, pin), oldest first. The plan
+   * plus the journal say exactly what load was asked for; see Steering.ts.
+   */
+  journal: Schema.Array(JournalEntry),
   /** Set when status is "crashed". */
   error: Schema.optionalKey(Schema.String),
 })

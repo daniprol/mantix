@@ -41,6 +41,7 @@ const RunsHandlers = HttpApiBuilder.group(
         ),
       list: () => runs.list,
       get: ({ params }) => runs.get(params.id),
+      control: ({ params, payload }) => runs.control(params.id, payload),
       stop: ({ params }) => runs.stop(params.id),
       events: ({ params }) => runs.events(params.id),
     })

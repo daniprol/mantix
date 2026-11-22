@@ -5,7 +5,7 @@ import { assert, describe, it } from '@effect/vitest'
 
 import { rate, toPlan } from '../src/Load.ts'
 import { Recorder } from '../src/Recorder.ts'
-import { arrivalTimes, runOpenModel } from '../src/Scheduler.ts'
+import { arrivalTimes, planLoad, runOpenModel } from '../src/Scheduler.ts'
 
 /** Monotonic ms from the current Clock (TestClock inside it.effect). */
 const nowFrom = Effect.clockWith(clock =>
@@ -73,7 +73,7 @@ describe('runOpenModel', () => {
       const fiber = yield* Effect.forkChild(
         Effect.scoped(
           runOpenModel({
-            plan: toPlan(rate.constant(5, { duration: 2 })),
+            load: planLoad(toPlan(rate.constant(5, { duration: 2 }))),
             maxVus: 100,
             recorder,
             now,
@@ -110,7 +110,7 @@ describe('runOpenModel', () => {
       const fiber = yield* Effect.forkChild(
         Effect.scoped(
           runOpenModel({
-            plan: toPlan(rate.constant(10, { duration: 1 })),
+            load: planLoad(toPlan(rate.constant(10, { duration: 1 }))),
             maxVus: 2,
             recorder,
             now,

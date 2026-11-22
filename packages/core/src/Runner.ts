@@ -12,6 +12,8 @@
  *   snapshot: Effect<RunResult>       // RunInfo plus every Second so far
  *   events: Stream<RunEvent>          // replays every Second so far, then
  *                                     // follows live ones; ends with the run
+ *   control: (c) => Effect<JournalEntry, InvalidControl>
+ *                                     // steer it: rate, spike, pause, pin
  *   stop: Effect<void>                // stop early; waits for teardown
  *   await: Effect<RunResult>          // wait for the end
  * }
@@ -30,6 +32,11 @@
  *   - the work races a stop signal, fired by `stop` or by a failing
  *     `abortOnFail` threshold.
  *
+ * Steering (decision D3): `control` appends an entry to the run journal.
+ * The load each scenario generates is read from `steer(plan, journal)`
+ * (Steering.ts in @mantix/api) many times a second, so a change takes
+ * effect straight away and the journal is a full record of what was done.
+ *
  * All state lives in one SubscriptionRef. `events` is built from its
  * `changes` stream, which is why late subscribers get a full replay.
  */
@@ -47,8 +54,11 @@ import {
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 
 import {
+  type Control,
   type EndpointSecond,
   Histogram,
+  InvalidControl,
+  type JournalEntry,
   type LoadPlan,
   type RunEvent,
   type RunInfo,
@@ -58,6 +68,9 @@ import {
   type Second,
   type TestInfo,
   type ThresholdResult,
+  checkControl,
+  planDuration,
+  steer,
   summarizeSeconds,
 } from '@mantix/api'
 
@@ -68,10 +81,10 @@ import {
   makeAgent,
 } from './HttpClient.ts'
 import { messageOf, prepareScenario } from './Iteration.ts'
-import { planDuration, targetAt, toPlan } from './Load.ts'
+import { toPlan } from './Load.ts'
 import { Recorder } from './Recorder.ts'
 import { type Scenario, type TestDefinition } from './Scenario.ts'
-import { runOpenModel } from './Scheduler.ts'
+import { type LoadSource, runOpenModel } from './Scheduler.ts'
 import { type Threshold, evaluate, parseThreshold } from './Thresholds.ts'
 import { runClosedModel } from './VuPool.ts'
 
@@ -100,6 +113,10 @@ export interface RunHandle {
   readonly info: Effect.Effect<RunInfo>
   readonly snapshot: Effect.Effect<RunResult>
   readonly events: Stream.Stream<RunEvent>
+  /** Apply a live change and return its journal entry. */
+  readonly control: (
+    control: Control,
+  ) => Effect.Effect<JournalEntry, InvalidControl>
   readonly stop: Effect.Effect<void>
   readonly await: Effect.Effect<RunResult>
 }
@@ -354,6 +371,7 @@ export const startRun = Effect.fn('startRun')(function* (
     duration: totalDuration(plan),
     plan,
     thresholds: [],
+    journal: [],
   }
 
   // One SubscriptionRef holds the whole state. Every update is published
@@ -374,13 +392,28 @@ export const startRun = Effect.fn('startRun')(function* (
   // to keep its schedule (the "generator" lane on the dashboard).
   const loopDelay = monitorEventLoopDelay({ resolution: 10 })
 
-  // The planned load for second t, read at its middle: for a linear ramp
+  // Steering: the plan plus the journal, read once per change. Plain
+  // mutable state like the recorder, because the schedulers read it on
+  // their hot path; it is only replaced inside `control`.
+  let journal: ReadonlyArray<JournalEntry> = []
+  let steering = steer(plan, journal)
+  // When load generation began, in `now` ms. Journal times count from it.
+  let runStart: number | undefined
+  const elapsed = (): number =>
+    runStart === undefined ? 0 : (now() - runStart) / 1000
+
+  // What scenario `index` should be doing, in seconds since the run
+  // started. The closures read `steering` each time, so they always see
+  // the latest journal.
+  const loadOf = (index: number): LoadSource => ({
+    target: s => steering.target(index, s),
+    ended: s => steering.ended(index, s),
+    paused: s => steering.isPaused(s),
+  })
+
+  // The asked-for load for second t, read at its middle: for a linear ramp
   // that is exactly the average over the second.
-  const targetFor = (t: number): number =>
-    scenarios.reduce((sum, s) => {
-      const local = t + 0.5 - s.info.startAfter
-      return local < 0 ? sum : sum + targetAt(s.info.plan, local)
-    }, 0)
+  const targetFor = (t: number): number => steering.total(t + 0.5)
 
   /** Close second `t` and publish it, checking thresholds. */
   const closeSecond = (t: number) =>
@@ -446,19 +479,20 @@ export const startRun = Effect.fn('startRun')(function* (
         recorder,
       )
       const data = yield* prepared.setup
-      // The plan is anchored to the run's clock, so arrivals line up with
-      // the Seconds. A slow setup shifts it instead of causing a burst.
-      const planStart = Math.max(runStart + info.startAfter * 1000, now())
+      // The load is anchored to the run's clock, so arrivals line up with
+      // the Seconds and the journal. If setup was slow, the schedulers
+      // start from the current moment and skip what is overdue, instead
+      // of firing it all at once.
       const load =
         info.plan.model === 'rate'
           ? Effect.scoped(
               Effect.gen(function* () {
                 const fibers = yield* runOpenModel({
-                  plan: info.plan,
+                  load: loadOf(index),
                   maxVus: planned.maxVus,
                   recorder,
                   now,
-                  start: planStart,
+                  start: runStart,
                   iteration: (intendedStart, vu) =>
                     prepared.iteration(data, vu, intendedStart),
                   onBusy: busy => {
@@ -474,9 +508,9 @@ export const startRun = Effect.fn('startRun')(function* (
             )
           : Effect.scoped(
               runClosedModel({
-                plan: info.plan,
+                load: loadOf(index),
                 now,
-                start: planStart,
+                start: runStart,
                 iteration: vu => prepared.iteration(data, vu),
                 onVus: vus => {
                   vusByScenario[index] = vus
@@ -535,6 +569,7 @@ export const startRun = Effect.fn('startRun')(function* (
         () => Effect.sync(() => loopDelay.disable()),
       )
       const start = now()
+      runStart = start
       // forkScoped: the ticker lives exactly as long as this scope.
       yield* Effect.forkScoped(ticker(start))
 
@@ -588,11 +623,45 @@ export const startRun = Effect.fn('startRun')(function* (
     ),
   )
 
+  /**
+   * Apply one control. Checking it, adding it to the journal and replacing
+   * `steering` happen in one synchronous step, so two controls sent at the
+   * same moment can never interleave. Publishing the new journal to the
+   * stream comes after.
+   */
+  const control = (input: Control) =>
+    Effect.suspend(() => {
+      if (finished) {
+        return Effect.fail(
+          new InvalidControl({ message: 'The run has already ended.' }),
+        )
+      }
+      // Milliseconds are plenty, and keep the journal readable.
+      const at = Math.round(elapsed() * 1000) / 1000
+      const problem = checkControl(plan, journal, input, at)
+      if (problem !== undefined) {
+        return Effect.fail(new InvalidControl({ message: problem }))
+      }
+      const entry: JournalEntry = {
+        seq: journal.length + 1,
+        at,
+        control: input,
+      }
+      journal = [...journal, entry]
+      steering = steer(plan, journal)
+      const latest = journal
+      return SubscriptionRef.update(state, current => ({
+        ...current,
+        info: { ...current.info, journal: latest },
+      })).pipe(Effect.as(entry))
+    })
+
   return {
     id,
     info: Effect.map(SubscriptionRef.get(state), s => s.info),
     snapshot: SubscriptionRef.get(state),
     events,
+    control,
     stop: Effect.andThen(
       Deferred.succeed(stopSignal, 'stopped'),
       Deferred.await(done),
