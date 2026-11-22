@@ -11,6 +11,7 @@ import {
   type ErrorKind,
   type GeneratorHealth,
   Histogram,
+  type IterationTrace,
   type SchemaDiff,
   type Second,
   fingerprint,
@@ -76,6 +77,7 @@ export class Recorder {
   private completed = 0
   private failed = 0
   private lateStart = 0
+  private slowest: IterationTrace | undefined
 
   /**
    * Iterations running right now. Unlike the counters above this is a
@@ -169,6 +171,13 @@ export class Recorder {
     if (lateMs > this.lateStart) this.lateStart = lateMs
   }
 
+  /** An iteration finished; keep it if it is the slowest this second. */
+  offerTrace(trace: IterationTrace): void {
+    if (this.slowest === undefined || trace.duration > this.slowest.duration) {
+      this.slowest = trace
+    }
+  }
+
   /** The latest an iteration started this second, in ms. */
   get lateStartMs(): number {
     return this.lateStart
@@ -233,6 +242,7 @@ export class Recorder {
         : { generator: gauges.generator }),
       endpoints,
       errorSamples: this.samples,
+      ...(this.slowest === undefined ? {} : { slowest: this.slowest }),
       ...(this.fingerprints.size === 0
         ? {}
         : { fingerprints: Object.fromEntries(this.fingerprints) }),
@@ -250,6 +260,7 @@ export class Recorder {
     this.completed = 0
     this.failed = 0
     this.lateStart = 0
+    this.slowest = undefined
     return second
   }
 }

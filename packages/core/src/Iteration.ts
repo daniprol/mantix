@@ -121,9 +121,9 @@ export const prepareScenario = (
   const body = (
     data: unknown,
     vu: number,
+    iteration: number,
     timing: IterationTiming,
   ): Effect.Effect<void, Thrown> => {
-    const iteration = nextCount(vu)
     if (scenario._tag === 'AsyncScenario') {
       return fromAsync(signal =>
         scenario.options.iteration({
@@ -157,19 +157,23 @@ export const prepareScenario = (
   }
 
   // Record how an iteration ended.
-  const recordOutcome = (exit: Exit.Exit<void, Thrown>): void => {
+  const recordOutcome = (
+    exit: Exit.Exit<void, Thrown>,
+  ): 'completed' | 'failed' | 'interrupted' => {
     if (exit._tag === 'Success') {
       recorder.iterationEnded('completed')
-      return
+      return 'completed'
     }
     if (Cause.hasInterruptsOnly(exit.cause)) {
       recorder.iterationEnded('interrupted')
-      return
+      return 'interrupted'
     }
     const error = errorOf(exit.cause)
     if (error instanceof RequestCancelled) {
       recorder.iterationEnded('interrupted')
-    } else if (error instanceof RequestFailed) {
+      return 'interrupted'
+    }
+    if (error instanceof RequestFailed) {
       // Already recorded by the http client.
       recorder.iterationEnded('failed')
     } else {
@@ -184,14 +188,34 @@ export const prepareScenario = (
         location === undefined ? {} : { location },
       )
     }
+    return 'failed'
   }
 
   const iteration = (data: unknown, vu: number, intendedStart?: number) =>
     Effect.suspend(() => {
-      const timing = makeTiming(intendedStart, config.now())
+      const startedAt = config.now()
+      const timing = makeTiming(intendedStart, startedAt)
+      const count = nextCount(vu)
       recorder.iterationStarted(timing.firstDelay)
-      return body(data, vu, timing).pipe(
-        Effect.onExit(exit => Effect.sync(() => recordOutcome(exit))),
+      // When it ended: record the outcome, and offer the iteration for the
+      // waterfall (the recorder keeps the slowest of each second).
+      const onEnd = (exit: Exit.Exit<void, Thrown>) => {
+        const outcome = recordOutcome(exit)
+        if (outcome === 'interrupted') return
+        const end = config.now()
+        recorder.offerTrace({
+          scenario: name,
+          vu,
+          iteration: count,
+          lateMs: Math.round((timing.firstDelay ?? 0) * 100) / 100,
+          duration:
+            Math.round((end - (intendedStart ?? startedAt)) * 100) / 100,
+          outcome,
+          spans: [...timing.spans].sort((a, b) => a.start - b.start),
+        })
+      }
+      return body(data, vu, count, timing).pipe(
+        Effect.onExit(exit => Effect.sync(() => onEnd(exit))),
         // The outcome is recorded; the error itself is not needed any more.
         Effect.ignoreCause,
       )

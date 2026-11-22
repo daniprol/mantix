@@ -69,6 +69,12 @@ describe('runner', () => {
           ),
         )
 
+        // Each second keeps its slowest iteration for the waterfall.
+        const slowest = result.seconds[0]!.slowest!
+        assert.strictEqual(slowest.scenario, 'smoke')
+        assert.strictEqual(slowest.spans[0]!.endpoint, 'GET /wait')
+        assert.isAtLeast(slowest.duration, slowest.spans[0]!.duration)
+
         // The first threshold passes; the second cannot (1 ms vs 50 ms).
         assert.deepStrictEqual(
           result.info.thresholds.map(t => t.passed),
