@@ -25,6 +25,7 @@ import { startRecordedRun } from './History.ts'
 import { contextLine, passed, secondLine, summaryReport } from './Report.ts'
 import { labelFlag } from './RunContext.ts'
 import { RunStore, historyFlags } from './RunStore.ts'
+import { baseUrlFlag, checkBaseUrl, withBaseUrl } from './Target.ts'
 
 /**
  * A failure we already explained to the person. The two markers tell
@@ -50,6 +51,8 @@ export class CliExit extends Data.TaggedError('CliExit')<{
 export const loadTest = (
   file: string,
   url = pathToFileURL(resolve(file)).href,
+  // From --base-url: replaces every scenario's baseUrl (see Target.ts).
+  baseUrl?: string,
 ) =>
   Effect.tryPromise({
     // Node runs TypeScript test files directly (type stripping).
@@ -71,9 +74,18 @@ export const loadTest = (
               message: `${file} has no default export. Add \`export default scenario({...})\`.`,
             }),
           )
-        : Effect.succeed(module.default),
+        : Effect.succeed(withBaseUrl(module.default, baseUrl)),
     ),
   )
+
+/** Read --base-url / MANTIX_BASE_URL, failing with a plain message. */
+export const parseBaseUrl = (flag: Option.Option<string>) => {
+  const baseUrl = Option.getOrUndefined(flag)
+  const problem = baseUrl === undefined ? undefined : checkBaseUrl(baseUrl)
+  return problem === undefined
+    ? Effect.succeed(baseUrl)
+    : Effect.fail(new CliExit({ code: 1, message: problem }))
+}
 
 const parseOverrides = (flags: {
   readonly rate: Option.Option<number>
@@ -159,12 +171,14 @@ const run = Command.make(
       Flag.withDefault(false),
     ),
     label: labelFlag,
+    baseUrl: baseUrlFlag,
     ...historyFlags,
   },
   Effect.fn('run')(function* (args) {
     const program = Effect.gen(function* () {
       const overrides = yield* parseOverrides(args)
-      const test = yield* loadTest(args.file)
+      const baseUrl = yield* parseBaseUrl(args.baseUrl)
+      const test = yield* loadTest(args.file, undefined, baseUrl)
 
       // Remember the handle so a Ctrl-C can still print the summary.
       let handle: RunHandle | undefined

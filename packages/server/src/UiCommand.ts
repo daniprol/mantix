@@ -5,16 +5,17 @@
  * browser and the run streams to the page one Second at a time.
  */
 import { Console, Effect, Layer, Option } from 'effect'
-import { Argument, Command, Flag } from 'effect/cli'
+import { Argument, Command } from 'effect/cli'
 
 import { testInfo } from '@mantix/core'
 
 import { DevEvents } from './DevEvents.ts'
-import { CliExit, loadTest } from './RunCommand.ts'
+import { CliExit, loadTest, parseBaseUrl } from './RunCommand.ts'
 import { labelFlag } from './RunContext.ts'
 import { RunStore, historyFlags } from './RunStore.ts'
 import { Runs } from './Runs.ts'
 import { findWebRoot, serverLayer } from './Server.ts'
+import { baseUrlFlag, portFlag } from './Target.ts'
 
 export const describeServeError = (error: unknown, port: number): string => {
   const cause =
@@ -35,16 +36,15 @@ export const ui = Command.make(
     file: Argument.String('file').pipe(
       Argument.withDescription('The test file, e.g. examples/checkout.ts'),
     ),
-    port: Flag.Int('port').pipe(
-      Flag.withDescription('Port for the dashboard'),
-      Flag.withDefault(4100),
-    ),
+    port: portFlag,
     label: labelFlag,
+    baseUrl: baseUrlFlag,
     ...historyFlags,
   },
   Effect.fn('ui')(
     function* (args) {
-      const test = yield* loadTest(args.file)
+      const baseUrl = yield* parseBaseUrl(args.baseUrl)
+      const test = yield* loadTest(args.file, undefined, baseUrl)
       // Read the test once up front, so a typo fails here with a clear
       // message instead of when someone presses Start.
       yield* Effect.try({
