@@ -17,12 +17,24 @@ The Mantix dashboard. It talks to the Mantix server through the shared
   60 s; `MOCK_DURATION`, `MOCK_LAG=0`). `pnpm dev` proxies `/api` to it.
 - Layout: `model.ts`, `message.ts`, `update.ts`, `commands.ts`,
   `subscriptions.ts`, `view/*`, pure helpers in `domain/*`, charts in
-  `charts/*`.
+  `charts/*`. `route.ts` holds the URLs, and `analysis.ts` works out what
+  the run, endpoint and comparison pages show from the Model.
+- Pages are routes, so browser back and reload work: `/` (New run),
+  `/runs`, `/runs/:id`, `/runs/:id/endpoints/:endpoint`, `/compare`,
+  `/compare/:id/:baselineId` and `/compare/:id/:baselineId/endpoints/:endpoint`.
+  The endpoint is one URL-encoded segment ("GET%20%2Fproducts%2F%3Asku").
 - Chart objects (uPlot) never go in the Model. `charts/timeline.ts` creates
   them in a Mount and registers them in `charts/store.ts`; the SyncTimeline
-  Command hands them data.
-- Percentiles always come from merged histograms (`summarizeSeconds`),
-  never averaged. Fewer than 100 requests shows "n<100", not a p99.
-- Design rules (proposal §3): tokens in `styles.css`, Geist + Geist Mono
-  for numbers, hairlines not cards, amber only for live edge, selection and
-  focus, red only for errors and failed thresholds, one primary button.
+  Command hands them data. `update` sends SyncTimeline only when the
+  timeline's input changed.
+- Percentiles always come from merged histograms (`summarize`), never
+  averaged. The headline is p95 (p50 and p95 labels everywhere); fewer than
+  20 requests shows no p95.
+- The list under the timeline shares its columns with the chart
+  (`charts/layout.ts`), so each endpoint's curve lines up with the time axis.
+- Design rules: light theme only, tokens in `styles.css`, Geist + Geist
+  Mono for numbers, hairlines not cards, amber only for live edge, selection
+  and focus, red only for errors and failed checks, one primary button. No
+  explanatory titles or sentences: labels and data.
+- Tests: `story.test.ts` (update), `scene.test.ts` (view) and
+  `e2e/dashboard.spec.ts` (a real browser against `mantix ui`).

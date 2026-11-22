@@ -3,8 +3,12 @@ import { describe, expect, test } from 'vitest'
 
 import type { LoadPlan } from '@mantix/api'
 
+import { makeSecond } from '../fixture.ts'
+import { latencyChange } from './compare.ts'
 import * as Format from './format.ts'
 import { applyOverrides, describePlan, plannedAt } from './plan.ts'
+import { Span, effectiveSpan, spanLabel, spanSeconds } from './span.ts'
+import { focusSeconds, p95Curve } from './stats.ts'
 import * as Threshold from './threshold.ts'
 
 describe('format', () => {
@@ -102,5 +106,53 @@ describe('threshold', () => {
         passed: false,
       }),
     ).toBe('errors were 2.13%, limit 1%')
+  })
+})
+
+describe('compare', () => {
+  test('changes under 5% are the same; the rest say which way', () => {
+    expect(latencyChange(248, 212)).toBe('15% faster')
+    expect(latencyChange(196, 128)).toBe('35% faster')
+    expect(latencyChange(421, 438)).toBe('same')
+    expect(latencyChange(100, 150)).toBe('50% slower')
+  })
+})
+
+describe('span', () => {
+  const seconds = [0, 1, 2, 3, 4].map(t => makeSecond(t, { ms: 10 }))
+
+  test('a range keeps the seconds from `from` up to, not including, `to`', () => {
+    expect(
+      spanSeconds(seconds, Span.Range({ from: 1, to: 3 })).map(s => s.t),
+    ).toEqual([1, 2])
+    expect(spanLabel(Span.Range({ from: 180, to: 225 }))).toBe('03:00 – 03:45')
+  })
+
+  test('"Now" only means something while the run is live', () => {
+    expect(effectiveSpan(Span.Now(), false)).toEqual(Span.WholeRun())
+    expect(effectiveSpan(Span.Now(), true)).toEqual(Span.Now())
+  })
+})
+
+describe('stats', () => {
+  const seconds = [
+    makeSecond(0, { ms: 40, endpoint: 'GET /a' }),
+    makeSecond(1, { ms: 400, failed: 3, endpoint: 'POST /b' }),
+  ]
+
+  test('focusing keeps one endpoint, its errors and its counts', () => {
+    const focused = focusSeconds(seconds, 'POST /b')
+    expect(focused[0]?.endpoints).toEqual([])
+    expect(focused[1]?.endpoints.map(part => part.endpoint)).toEqual([
+      'POST /b',
+    ])
+    expect(focused[1]?.errorSamples).toHaveLength(1)
+  })
+
+  test('the p95 curve has a point for each second with requests', () => {
+    const curve = p95Curve(seconds, Option.some('GET /a'))
+    expect(curve).toHaveLength(2)
+    expect(curve[0]).toBeCloseTo(40, -1)
+    expect(curve[1]).toBeNull()
   })
 })

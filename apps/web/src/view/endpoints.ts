@@ -1,293 +1,237 @@
 /**
- * The endpoints table, slowest p99 first. Clicking a row opens its details
- * in place: more percentiles, corrected versus uncorrected latency, status
- * codes and recent errors.
+ * The endpoint list, under the timeline and aligned with it: the name in
+ * the gutter, a small p95 curve under the plot, the numbers under the end
+ * labels. "All requests" comes first; each endpoint after it is a link to
+ * its own page.
+ *
+ * One run: p50, p95, errors. Two runs: baseline p95, this run's p95, and
+ * the change.
  */
-import { Array, Option } from 'effect'
+import { Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import type { EndpointStats, Second } from '@mantix/api'
 
+import { COLUMNS } from '../charts/layout.ts'
+import { type ComparedRow, latencyChange } from '../domain/compare.ts'
 import * as Format from '../domain/format.ts'
-import {
-  MIN_SAMPLES_FOR_P99,
-  recentErrorSamples,
-  statusCounts,
-} from '../domain/stats.ts'
-import { Message } from '../message.ts'
-import { quantity } from './parts.ts'
+import type { Range } from '../domain/span.ts'
+import { hasEnoughForP95, p95Curve } from '../domain/stats.ts'
+import type { Message } from '../message.ts'
+import { curveView } from './curve.ts'
+import { endpointName, missing, quantity } from './parts.ts'
 
-const COLUMNS = 'grid grid-cols-[minmax(0,1fr)_repeat(4,5.5rem)] gap-x-4'
+/** What every row needs to draw its curve on the timeline's clock. */
+export type ListContext = Readonly<{
+  current: ReadonlyArray<Second>
+  maybeBaseline: Option.Option<ReadonlyArray<Second>>
+  duration: number
+  maybeRange: Option.Option<Range>
+  spanLabel: string
+  hrefOf: (endpoint: string) => string
+}>
 
-/** "GET /cart/:id" → method set apart, muted, the route in full. */
-const endpointName = (endpoint: string, h: HtmlBuilder<Message>): Html => {
-  const [method, ...rest] = endpoint.split(' ')
-  return rest.length === 0
-    ? h.span([h.Class('num truncate')], [endpoint])
-    : h.span(
-        [h.Class('flex min-w-0 items-baseline gap-2')],
-        [
-          h.span(
-            [h.Class('num w-10 shrink-0 text-[11px] text-ink-3')],
-            [method ?? ''],
-          ),
-          h.span([h.Class('num truncate text-ink')], [rest.join(' ')]),
-        ],
-      )
-}
+const ALL_REQUESTS = 'All requests'
 
-const p99Cell = (row: EndpointStats, h: HtmlBuilder<Message>): Html =>
-  row.requests < MIN_SAMPLES_FOR_P99
-    ? h.span([h.Class('num text-ink-3')], ['n<100'])
-    : quantity(Format.latency(row.latency.p99), h)
+const rowClass = `grid h-11 items-center border-b border-hairline`
 
-const errorCell = (row: EndpointStats, h: HtmlBuilder<Message>): Html =>
-  row.errors === 0
-    ? h.span([h.Class('num text-ink-3')], ['0%'])
-    : quantity(Format.percent(row.errorRate), h, 'text-danger/70')
-
-const headerRow = (h: HtmlBuilder<Message>): Html =>
+const numbers = (cells: ReadonlyArray<Html>, h: HtmlBuilder<Message>): Html =>
   h.div(
-    [
-      h.Class(
-        `${COLUMNS} border-b border-hairline px-3 pb-2 text-[12px] text-ink-3`,
-      ),
-      h.AriaHidden(true),
-    ],
-    [
-      h.span([], ['Endpoint']),
-      ...['req/s', 'p50', 'p99', 'errors'].map(title =>
-        h.span([h.Class('text-right')], [title]),
-      ),
-    ],
+    [h.Class('grid grid-cols-3 gap-x-2 text-right text-[13px]')],
+    [...cells],
   )
 
-const stat = (title: string, value: Html, h: HtmlBuilder<Message>): Html =>
-  h.div(
-    [h.Class('flex flex-col gap-0.5')],
-    [h.span([h.Class('text-[11px] text-ink-3')], [title]), value],
+const curveOf = (
+  context: ListContext,
+  maybeEndpoint: Option.Option<string>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  curveView(
+    {
+      current: p95Curve(context.current, maybeEndpoint),
+      maybeBaseline: Option.map(context.maybeBaseline, seconds =>
+        p95Curve(seconds, maybeEndpoint),
+      ),
+      duration: context.duration,
+      maybeRange: context.maybeRange,
+    },
+    h,
   )
 
-const detail = (
-  row: EndpointStats,
-  seconds: ReadonlyArray<Second>,
+/** A row: the whole line is a link, except for "All requests". */
+const row = (
+  key: string,
+  maybeHref: Option.Option<string>,
+  name: Html,
+  curve: Html,
+  cells: ReadonlyArray<Html>,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const statuses = statusCounts(seconds, row.endpoint)
-  const samples = recentErrorSamples(seconds, row.endpoint)
-  const hasEnough = row.requests >= MIN_SAMPLES_FOR_P99
-  return h.div(
-    [
-      h.Class(
-        'grid gap-6 border-b border-hairline px-3 pt-3 pb-5 pl-[3.75rem] sm:grid-cols-[auto_minmax(0,1fr)]',
-      ),
-    ],
-    [
-      h.div(
-        [h.Class('flex flex-col gap-5')],
+  const children = [
+    h.div([h.Class('min-w-0 pr-4')], [name]),
+    h.div([]),
+    curve,
+    numbers(cells, h),
+  ]
+  const style = h.Style({ 'grid-template-columns': COLUMNS })
+  return Option.match(maybeHref, {
+    onNone: () => h.keyed('div')(key, [h.Class(rowClass), style], children),
+    onSome: href =>
+      h.keyed('a')(
+        key,
         [
-          h.div(
-            [h.Class('flex flex-wrap gap-x-6 gap-y-3')],
-            [
-              stat('p50', quantity(Format.latency(row.latency.p50), h), h),
-              stat('p90', quantity(Format.latency(row.latency.p90), h), h),
-              stat('p95', quantity(Format.latency(row.latency.p95), h), h),
-              stat(
-                'p99',
-                hasEnough
-                  ? quantity(Format.latency(row.latency.p99), h)
-                  : h.span([h.Class('num text-ink-3')], ['n<100']),
-                h,
-              ),
-              stat('max', quantity(Format.latency(row.latency.max), h), h),
-              stat(
-                'requests',
-                h.span([h.Class('num')], [Format.grouped(row.requests)]),
-                h,
-              ),
-            ],
-          ),
-          h.div(
-            [h.Class('max-w-[46ch]')],
-            [
-              h.div(
-                [h.Class('flex flex-wrap items-baseline gap-x-5 gap-y-1')],
-                [
-                  h.span(
-                    [h.Class('text-ink-2')],
-                    [
-                      'p99 corrected ',
-                      quantity(Format.latency(row.latency.p99), h),
-                    ],
-                  ),
-                  h.span(
-                    [h.Class('text-ink-3')],
-                    [
-                      'uncorrected ',
-                      quantity(Format.latency(row.uncorrected.p99), h),
-                    ],
-                  ),
-                ],
-              ),
-              h.p(
-                [h.Class('mt-1 text-[12px] text-ink-3')],
-                [
-                  'Corrected latency starts the clock when a request should have been sent, so time spent waiting behind a slow server counts. Uncorrected starts it when the request actually left.',
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-      h.div(
-        [h.Class('flex flex-col gap-4 text-[12px]')],
-        [
-          h.div(
-            [],
-            [
-              h.div([h.Class('mb-1 text-[11px] text-ink-3')], ['Status codes']),
-              Array.match(statuses, {
-                onEmpty: () => h.span([h.Class('text-ink-3')], ['None yet']),
-                onNonEmpty: list =>
-                  h.div(
-                    [h.Class('num flex flex-wrap gap-x-4 gap-y-1')],
-                    list.map(([status, count]) =>
-                      h.span(
-                        [
-                          h.Class(
-                            Number(status) >= 400
-                              ? 'text-danger'
-                              : 'text-ink-2',
-                          ),
-                        ],
-                        [
-                          status,
-                          h.span(
-                            [h.Class('ml-1.5 text-ink-3')],
-                            [`× ${Format.grouped(count)}`],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              }),
-            ],
-          ),
-          h.div(
-            [],
-            [
-              h.div(
-                [h.Class('mb-1 text-[11px] text-ink-3')],
-                ['Recent errors'],
-              ),
-              Array.match(samples, {
-                onEmpty: () =>
-                  h.span([h.Class('text-ink-3')], ['No errors in this window']),
-                onNonEmpty: list =>
-                  h.ul(
-                    [h.Class('flex flex-col gap-1')],
-                    list.map(sample =>
-                      h.keyed('li')(
-                        `${sample.kind}:${sample.message}`,
-                        [h.Class('flex min-w-0 items-baseline gap-2')],
-                        [
-                          h.span(
-                            [h.Class('shrink-0 text-danger')],
-                            [sample.kind],
-                          ),
-                          h.span(
-                            [h.Class('num truncate text-ink-2')],
-                            [sample.message],
-                          ),
-                          sample.count > 1
-                            ? h.span(
-                                [h.Class('num shrink-0 text-ink-3')],
-                                [`× ${sample.count}`],
-                              )
-                            : h.empty,
-                        ],
-                      ),
-                    ),
-                  ),
-              }),
-            ],
-          ),
-        ],
-      ),
-    ],
-  )
-}
-
-const row = (
-  stats: EndpointStats,
-  isExpanded: boolean,
-  seconds: ReadonlyArray<Second>,
-  h: HtmlBuilder<Message>,
-): Html =>
-  h.keyed('div')(
-    stats.endpoint,
-    [],
-    [
-      h.button(
-        [
-          h.Type('button'),
+          h.Href(href),
           h.Class(
-            `${COLUMNS} relative h-9 w-full items-center px-3 text-left transition-colors duration-150 ease-out hover:bg-wash ${
-              isExpanded ? 'bg-wash' : 'border-b border-hairline'
-            }`,
+            `${rowClass} -mx-3 px-3 transition-colors duration-150 ease-out hover:bg-wash`,
           ),
-          h.AriaExpanded(isExpanded),
-          h.OnClick(Message.ClickedEndpoint({ endpoint: stats.endpoint })),
+          style,
         ],
-        [
-          isExpanded
-            ? h.span([
-                h.Class('absolute inset-y-0 left-0 w-0.5 bg-accent'),
-                h.AriaHidden(true),
-              ])
-            : h.empty,
-          endpointName(stats.endpoint, h),
-          h.span(
-            [h.Class('text-right')],
-            [quantity(Format.rate(stats.rps), h)],
-          ),
-          h.span(
-            [h.Class('text-right')],
-            [quantity(Format.latency(stats.latency.p50), h)],
-          ),
-          h.span([h.Class('text-right text-ink')], [p99Cell(stats, h)]),
-          h.span([h.Class('text-right')], [errorCell(stats, h)]),
-        ],
-      ),
-      isExpanded ? detail(stats, seconds, h) : h.empty,
-    ],
-  )
-
-export const endpointsView = (
-  rows: ReadonlyArray<EndpointStats>,
-  seconds: ReadonlyArray<Second>,
-  maybeExpanded: Option.Option<string>,
-  h: HtmlBuilder<Message>,
-): Html =>
-  Array.match(rows, {
-    onEmpty: () =>
-      h.p(
-        [h.Class('py-6 text-ink-3')],
-        ['Endpoints appear here once the first requests finish.'],
-      ),
-    onNonEmpty: list =>
-      h.div(
-        [h.Class('text-[13px]')],
-        [
-          headerRow(h),
-          ...list.map(stats =>
-            row(
-              stats,
-              Option.contains(maybeExpanded, stats.endpoint),
-              seconds,
-              h,
-            ),
-          ),
-        ],
+        children,
       ),
   })
+}
+
+const header = (
+  spanLabel: string,
+  titles: ReadonlyArray<string>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.div(
+    [
+      h.Class('grid items-end border-b border-hairline pb-2'),
+      h.Style({ 'grid-template-columns': COLUMNS }),
+    ],
+    [
+      h.div(
+        [h.Class('flex items-baseline gap-3')],
+        [
+          h.h2([h.Class('text-[15px] font-medium text-ink')], ['Endpoints']),
+          h.span([h.Class('num text-[12px] text-ink-2')], [spanLabel]),
+        ],
+      ),
+      h.div([]),
+      h.div([h.Class('text-[12px] text-ink-2')], ['p95']),
+      numbers(
+        titles.map(title =>
+          h.span([h.Class('text-[12px] text-ink-2')], [title]),
+        ),
+        h,
+      ),
+    ],
+  )
+
+const p95Cell = (stats: EndpointStats, h: HtmlBuilder<Message>): Html =>
+  hasEnoughForP95(stats.requests)
+    ? quantity(Format.latency(stats.latency.p95), h)
+    : missing(`n=${stats.requests}`, h)
+
+const errorsCell = (stats: EndpointStats, h: HtmlBuilder<Message>): Html =>
+  h.span(
+    [h.Class(`num ${stats.errors > 0 ? 'text-danger' : 'text-ink'}`)],
+    [Format.grouped(stats.errors)],
+  )
+
+const singleCells = (
+  stats: EndpointStats,
+  h: HtmlBuilder<Message>,
+): ReadonlyArray<Html> => [
+  quantity(Format.latency(stats.latency.p50), h),
+  p95Cell(stats, h),
+  errorsCell(stats, h),
+]
+
+export const endpointListView = (
+  total: EndpointStats,
+  rows: ReadonlyArray<EndpointStats>,
+  context: ListContext,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.section(
+    [h.Class('mt-10'), h.AriaLabel('Endpoints')],
+    [
+      header(context.spanLabel, ['p50', 'p95', 'errors'], h),
+      row(
+        ALL_REQUESTS,
+        Option.none(),
+        h.span([h.Class('text-ink')], [ALL_REQUESTS]),
+        curveOf(context, Option.none(), h),
+        singleCells(total, h),
+        h,
+      ),
+      ...rows.map(stats =>
+        row(
+          stats.endpoint,
+          Option.some(context.hrefOf(stats.endpoint)),
+          endpointName(stats.endpoint, h),
+          curveOf(context, Option.some(stats.endpoint), h),
+          singleCells(stats, h),
+          h,
+        ),
+      ),
+    ],
+  )
+
+const comparedCells = (
+  maybeCurrent: Option.Option<EndpointStats>,
+  maybeBaseline: Option.Option<EndpointStats>,
+  h: HtmlBuilder<Message>,
+): ReadonlyArray<Html> => {
+  const p95 = (maybeStats: Option.Option<EndpointStats>) =>
+    Option.match(maybeStats, {
+      onNone: () => missing('–', h),
+      onSome: stats => p95Cell(stats, h),
+    })
+  return [
+    h.span([h.Class('text-ink-2')], [p95(maybeBaseline)]),
+    p95(maybeCurrent),
+    Option.match(Option.all([maybeBaseline, maybeCurrent]), {
+      onNone: () => missing('–', h),
+      onSome: ([baseline, current]) => {
+        const change = latencyChange(baseline.latency.p95, current.latency.p95)
+        return h.span(
+          [
+            h.Class(
+              `whitespace-nowrap ${change === 'same' ? 'text-ink-2' : change.endsWith('slower') ? 'text-danger' : 'text-ink'}`,
+            ),
+          ],
+          [change],
+        )
+      },
+    }),
+  ]
+}
+
+export const comparedListView = (
+  totals: Readonly<{ current: EndpointStats; baseline: EndpointStats }>,
+  rows: ReadonlyArray<ComparedRow>,
+  context: ListContext,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.section(
+    [h.Class('mt-10'), h.AriaLabel('Endpoints')],
+    [
+      header(context.spanLabel, ['baseline', 'this run', 'change'], h),
+      row(
+        ALL_REQUESTS,
+        Option.none(),
+        h.span([h.Class('text-ink')], [ALL_REQUESTS]),
+        curveOf(context, Option.none(), h),
+        comparedCells(
+          Option.some(totals.current),
+          Option.some(totals.baseline),
+          h,
+        ),
+        h,
+      ),
+      ...rows.map(compared =>
+        row(
+          compared.endpoint,
+          Option.some(context.hrefOf(compared.endpoint)),
+          endpointName(compared.endpoint, h),
+          curveOf(context, Option.some(compared.endpoint), h),
+          comparedCells(compared.maybeCurrent, compared.maybeBaseline, h),
+          h,
+        ),
+      ),
+    ],
+  )

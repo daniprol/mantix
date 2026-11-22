@@ -1,8 +1,6 @@
 /**
  * Small, hand-made data for the tests.
  */
-import { Option } from 'effect'
-
 import {
   Histogram,
   type RunInfo,
@@ -10,8 +8,15 @@ import {
   type TestInfo,
 } from '@mantix/api'
 
-import { type Model, RunState, TestState, initialModel } from './model.ts'
-import { Feed } from './model.ts'
+import {
+  Feed,
+  History,
+  type Model,
+  RunData,
+  TestState,
+  initialModel,
+} from './model.ts'
+import { AppRoute } from './route.ts'
 
 const testInfo: TestInfo = {
   file: 'examples/checkout.ts',
@@ -52,7 +57,12 @@ export const runningRun: RunInfo = {
 /** One second where every request took `ms` and `failed` of them failed. */
 export const makeSecond = (
   t: number,
-  options: Readonly<{ ms: number; requests?: number; failed?: number }>,
+  options: Readonly<{
+    ms: number
+    requests?: number
+    failed?: number
+    endpoint?: string
+  }>,
 ): Second => {
   const requests = options.requests ?? 100
   const failed = options.failed ?? 0
@@ -72,7 +82,7 @@ export const makeSecond = (
     loopLagMs: 1,
     endpoints: [
       {
-        endpoint: 'POST /checkout',
+        endpoint: options.endpoint ?? 'POST /checkout',
         requests,
         latency,
         uncorrected: latency,
@@ -88,7 +98,7 @@ export const makeSecond = (
         ? []
         : [
             {
-              endpoint: 'POST /checkout',
+              endpoint: options.endpoint ?? 'POST /checkout',
               kind: 'HttpStatus',
               message: '503 Service Unavailable',
             },
@@ -96,22 +106,48 @@ export const makeSecond = (
   }
 }
 
+export const finishedRun: RunInfo = {
+  ...runningRun,
+  status: 'finished',
+  endedAt: runningRun.startedAt + 150_000,
+  thresholds: [
+    { expression: 'p99 < 250ms', actual: 412, passed: false },
+    { expression: 'errors < 1%', actual: 0.2, passed: true },
+  ],
+}
+
+export const baselineRun: RunInfo = {
+  ...finishedRun,
+  id: 'run-0',
+  startedAt: finishedRun.startedAt - 3_600_000,
+  endedAt:
+    finishedRun.endedAt === null ? null : finishedRun.endedAt - 3_600_000,
+}
+
+/** The New run page with the test loaded. */
 export const readyModel: Model = {
-  ...initialModel,
+  ...initialModel(AppRoute.NewRun()),
   test: TestState.Loaded({ test: testInfo }),
 }
 
-export const watchingModel = (
-  run: RunInfo,
-  seconds: ReadonlyArray<Second>,
+/** A page on `route` with these runs already loaded. */
+export const modelWithRuns = (
+  route: AppRoute,
+  runs: ReadonlyArray<readonly [RunInfo, ReadonlyArray<Second>]>,
 ): Model => ({
   ...readyModel,
-  runState: RunState.Watching({
-    run,
-    seconds,
-    feed: Feed.Following(),
-    connection: 0,
-    stop: 'NotRequested',
-  }),
-  maybeExpandedEndpoint: Option.none(),
+  route,
+  history: History.Loaded({ runs: runs.map(([run]) => run) }),
+  runs: Object.fromEntries(
+    runs.map(([run, seconds]) => [
+      run.id,
+      RunData.Loaded({
+        run,
+        seconds,
+        feed: run.status === 'running' ? Feed.Following() : Feed.Ended(),
+        connection: 0,
+        stop: 'NotRequested',
+      }),
+    ]),
+  ),
 })

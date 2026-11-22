@@ -3,8 +3,6 @@ title: Reading the dashboard
 description: What each part of the live dashboard shows, and what to look for while a run is going.
 ---
 
-import { Aside } from '@astrojs/starlight/components'
-
 `mantix ui <file>` starts a local server and the dashboard at
 [http://localhost:4100](http://localhost:4100). Nothing leaves your machine.
 
@@ -12,80 +10,79 @@ import { Aside } from '@astrojs/starlight/components'
 npx mantix ui checkout.ts
 ```
 
-Press **Start** to begin the run and **Stop** to end it early. The run uses
-the load model, thresholds and scenarios from your file, exactly as
-`mantix run` would.
+Press **Start run** to begin and **Stop** to end it early. The run uses the
+load model, thresholds and scenarios from your file, exactly as
+`mantix run` would. Every page has its own URL, so the browser's back
+button, reloads and shared links all work.
 
-<Aside type="caution" title="Work in progress">
-  The dashboard is being built now. This page describes the first version: the
-  views below exist, and their exact look will keep improving.
-</Aside>
+## The sections
 
-## The idea: time runs left to right
+The sidebar has four:
 
-A load test is a story that happens over time, so every chart shares one
-time axis, one column per second. New seconds appear at the right edge.
-Charts never re-animate old data, so what you saw a moment ago stays where
-it was.
+- **New run**: your test, its checks and the planned load. Change the rate
+  or duration before you start.
+- **Live**: the run going on right now. Grayed out when nothing is running.
+- **Runs**: every run in the history, newest first.
+- **Compare**: two runs side by side.
 
-## Latency heatmap
+## A run
 
-The largest chart. Each column is one second, each cell counts the requests
-that finished within a latency band, and darker means more requests. The
-vertical scale is logarithmic, so 5 ms and 5 s both fit.
+The bar at the top names the test and the run (when it started, the git
+branch and commit), its state, and the actions: **Stop** while it runs,
+**Run again** and **Compare** once it ends.
 
-Two lines are drawn on top:
+Below it, three numbers: throughput, **p95** latency and the error rate.
+p95 means 95 in 100 requests were faster than this. Under them, your checks
+with their measured values, red when they fail.
 
-- **p50**, the median: half the requests were faster than this.
-- **p99**: 99 in 100 requests were faster than this. This is usually the
-  number users feel, because a page makes many requests and one slow one
-  makes the page slow.
+### The timeline
 
-What to look for: a band that drifts upwards (the server is slowing down as
-it fills up), a second band appearing above the first (some requests take a
-different, slower path), and vertical stripes (a stall, like the demo
-target's 30 second hiccup).
+Three charts share one time axis, one column per second:
 
-The latencies here are corrected for coordinated omission: measured from
-when each iteration should have started. The uncorrected value is shown
-next to it, so you can see how much the correction matters. The
-[results page](/mantix/concepts/results/) explains both.
+- **Load**: the planned rate, dotted, and the requests that actually went
+  out. When they fall below the plan, the server could not keep up.
+- **Latency**: a heatmap of every request, darker where more of them
+  landed, with the **p50** and **p95** lines on top. The scale is
+  logarithmic, so 5 ms and 5 s both fit. A latency check draws its limit.
+- **Errors**: failed requests per second, in red.
 
-## Throughput: target against achieved
+Drag across the charts to select a range. Everything below then describes
+only those seconds. The **Span** buttons switch between **Now** (the last
+30 seconds of a live run), **Whole run** and your range.
 
-Two lines:
+What to look for: a band that drifts upwards (the server slows down as it
+fills up), a second band above the first (some requests take a slower
+path), and vertical stripes (a stall).
 
-- **Target**, dashed: the rate your load model asked for at that moment.
-- **Achieved**, solid: the iterations that actually started.
+The latencies are corrected for coordinated omission: measured from when
+each iteration should have started. The [results
+page](/mantix/concepts/results/) explains why.
 
-When they overlap, Mantix is keeping up. When achieved falls below target,
-every allowed virtual user was busy waiting for the server, and new
-arrivals were **dropped** rather than queued. That gap is the clearest sign
-that the server is saturated. See [maxVus and dropped
-iterations](/mantix/concepts/load-models/#maxvus-and-dropped-iterations).
-
-## Errors
-
-Failed requests per second, split by kind, so a timeout never looks like a
-`503`:
-
-| Kind             | Means                                                                      |
-| ---------------- | -------------------------------------------------------------------------- |
-| `HttpStatus`     | The server answered with a status outside `okStatus` (by default 200–399). |
-| `Timeout`        | No answer within the request's `timeout`.                                  |
-| `Transport`      | The connection failed: refused, reset, DNS.                                |
-| `SchemaMismatch` | The status was fine but the body did not match `expect`.                   |
-| `ScriptError`    | Your test code threw. Shown apart, never counted as a server error.        |
-
-## Endpoints table
+### Endpoints
 
 One row per endpoint, named by its route template (`GET /cart/:id`), not by
-each concrete URL. Columns show requests, rate, latency percentiles and the
-error share. Click a row to expand it and see that endpoint on its own.
+each concrete URL, slowest first. Each row shows its p95 over time on the
+same time axis as the charts, with its own scale, then p50, p95 and the
+error share for the selected span.
 
-## Thresholds
+Click an endpoint to open the same view for it alone, with its percentiles
+(p50 to max), its status codes and its failures grouped by cause. The back
+arrow and the breadcrumb return to the run.
 
-Your thresholds are listed with their current measured value and whether
-they pass. They are checked while the run is going, so you see a failure
+## Comparing two runs
+
+**Compare** on a finished run opens it against the run before it. The
+Compare section lets you pick any two.
+
+The baseline is drawn in gray under the current run: its load line, its
+p95 line, and its errors as bars hanging below the axis, mirroring this
+run's errors above it. The endpoint list shows the baseline p95, this
+run's p95 and the change ("15% faster", "same", "50% slower"), largest
+change first, and each curve overlays both runs. An endpoint opens the same
+comparison for that endpoint alone.
+
+## Checks
+
+Your thresholds are checked while the run is going, so you see a failure
 the moment it happens. A threshold with `abortOnFail: true` stops the run
 there and then, once its grace period (5 s by default) is over.

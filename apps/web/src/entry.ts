@@ -18,6 +18,12 @@ const application = Runtime.makeApplication({
   view,
   subscriptions,
   container: document.getElementById('root'),
+  // Foldkit routing: clicks on links become ClickedLink, and the browser's
+  // back and forward buttons become ChangedUrl.
+  routing: {
+    onUrlRequest: request => Message.ClickedLink({ request }),
+    onUrlChange: url => Message.ChangedUrl({ url }),
+  },
   devTools: {
     Message,
     // One of each arrives every second while a run is live. Keeping them

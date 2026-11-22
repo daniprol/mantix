@@ -8,7 +8,7 @@
 export type Quantity = Readonly<{ value: string; unit: string }>
 
 /** Three significant figures without scientific notation: 0.0412 → "0.0412". */
-export const significant = (value: number): string => {
+const significant = (value: number): string => {
   if (value === 0 || !Number.isFinite(value)) {
     return '0'
   }
