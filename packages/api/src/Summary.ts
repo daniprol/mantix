@@ -13,6 +13,7 @@ import {
   type EndpointSecond,
   type Second,
   countRequestErrors,
+  isLoad,
 } from './Second.ts'
 
 /** Latency figures for a window, in milliseconds. */
@@ -110,7 +111,8 @@ const statsFor = (
 
 /**
  * Stats per endpoint (sorted by name) and for all endpoints together, over
- * any list of Seconds. Pass a slice to summarise a window.
+ * any list of Seconds. Pass a slice to summarise a window. The total covers
+ * the load only, without setup and teardown requests.
  *
  * `elapsedSeconds` is what req/s divides by. It defaults to the number of
  * Seconds; pass the planned duration to ignore the short extra Second in
@@ -130,7 +132,9 @@ export const summarizeSeconds = (
       const list = byEndpoint.get(part.endpoint) ?? []
       list.push(part)
       byEndpoint.set(part.endpoint, list)
-      all.push(part)
+      // Setup and teardown requests get their own rows, but not a share
+      // of the totals; see isLoad.
+      if (isLoad(part)) all.push(part)
     }
   }
   const count = elapsedSeconds

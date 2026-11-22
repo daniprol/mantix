@@ -2,6 +2,7 @@ import { Effect, Stream } from 'effect'
 import { afterAll, beforeAll } from 'vitest'
 
 import { assert, describe, it } from '@effect/vitest'
+import { summarizeSeconds } from '@mantix/api'
 
 import { rate, vus } from '../src/Load.ts'
 import {
@@ -35,8 +36,10 @@ describe('runner', () => {
             'errors < 50%',
             { check: 'p99 < 1ms', endpoint: 'GET /wait' },
           ],
-          setup: async () => {
+          setup: async ({ http }) => {
             log.push('setup')
+            // Recorded like the load, but under its own "(setup)" row.
+            await http.get('/items/1', { name: 'GET /items/:id' })
             return 42
           },
           teardown: async ({ data }) => {
@@ -55,9 +58,17 @@ describe('runner', () => {
         assert.strictEqual(result.info.status, 'finished')
         assert.isAtLeast(result.seconds.length, 2)
 
-        const requests = result.seconds.flatMap(s => s.endpoints)
+        const parts = result.seconds.flatMap(s => s.endpoints)
+        const setupParts = parts.filter(e => e.phase === 'setup')
+        assert.deepStrictEqual(
+          setupParts.map(e => [e.endpoint, e.requests, e.statuses]),
+          [['GET /items/:id (setup)', 1, { '200': 1 }]],
+        )
+        // The totals (and thresholds) cover the load only.
+        const requests = parts.filter(e => e.phase === undefined)
         const total = requests.reduce((sum, e) => sum + e.requests, 0)
         assert.strictEqual(total, 40)
+        assert.strictEqual(summarizeSeconds(result.seconds).total.requests, 40)
         const started = result.seconds.reduce((sum, s) => sum + s.started, 0)
         const failed = result.seconds.reduce((sum, s) => sum + s.failed, 0)
         assert.strictEqual(started, 40)

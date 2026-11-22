@@ -12,6 +12,7 @@ import {
   type RunInfo,
   type Second,
   countRequestErrors,
+  isLoad,
 } from '@mantix/api'
 
 import { plannedTotalAt } from '../domain/plan.ts'
@@ -53,12 +54,12 @@ export type TimelineSeries = Readonly<{
 }>
 
 const toColumn = (second: Second): SecondColumn => {
-  const merged = Histogram.mergeAll(
-    second.endpoints.map(endpoint => endpoint.latency),
-  )
-  const requests = second.endpoints.reduce((sum, e) => sum + e.requests, 0)
-  // Same rule as the summary: a ScriptError is not a failed request.
-  const errors = second.endpoints.reduce(
+  // The same rules as the summary: the timeline shows the load (no setup or
+  // teardown requests), and a ScriptError is not a failed request.
+  const endpoints = second.endpoints.filter(isLoad)
+  const merged = Histogram.mergeAll(endpoints.map(endpoint => endpoint.latency))
+  const requests = endpoints.reduce((sum, e) => sum + e.requests, 0)
+  const errors = endpoints.reduce(
     (sum, e) => sum + countRequestErrors(e.errors),
     0,
   )

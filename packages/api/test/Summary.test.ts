@@ -72,4 +72,25 @@ describe('summarizeSeconds', () => {
     expect(total.errorRate).toBeCloseTo(1 / 4)
     expect(total.errorsByKind).toEqual({ HttpStatus: 1, ScriptError: 2 })
   })
+
+  it('shows setup requests in their own row, but not in the total', () => {
+    const load = second(0, 'GET /a', [1_000, 2_000])
+    const setup = second(0, 'POST /login (setup)', [900_000])
+    const seconds = [
+      {
+        ...load,
+        endpoints: [
+          ...load.endpoints,
+          { ...setup.endpoints[0]!, phase: 'setup' as const },
+        ],
+      },
+    ]
+    const { total, endpoints } = summarizeSeconds(seconds)
+    expect(endpoints.map(e => e.endpoint)).toEqual([
+      'GET /a',
+      'POST /login (setup)',
+    ])
+    expect(total.requests).toBe(2)
+    expect(total.latency.max).toBeLessThan(10)
+  })
 })

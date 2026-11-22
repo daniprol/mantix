@@ -86,6 +86,12 @@ What `iteration` receives:
 `setup` and `teardown` receive `http` and `signal`; `teardown` also gets
 `data`.
 
+Requests sent from `setup` and `teardown` are recorded like any other, under
+their own endpoint with the phase added: `POST /login (setup)`. They appear
+in the results table and error samples, and can have their own endpoint
+thresholds, but they are left out of the "All endpoints" totals (and the
+thresholds on them), so seeding data never changes the load's numbers.
+
 ## The http client
 
 | Method                                 | Returns                       |

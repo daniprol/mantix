@@ -70,6 +70,10 @@ honestly](/mantix/concepts/results/#coordinated-omission).
 outside `okStatus` and schema mismatches. Errors thrown by your own test code
 (`ScriptError`) are not counted.
 
+Requests sent from `setup` and `teardown` are not part of the load, so they
+don't count toward plain thresholds either. They get their own endpoint
+(`POST /login (setup)`), which you can name in an endpoint threshold.
+
 ## One endpoint at a time
 
 A plain string applies to all endpoints of the scenario together. To set a

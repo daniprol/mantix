@@ -290,7 +290,8 @@ const accumulate = (
       prev === undefined
         ? part
         : {
-            endpoint: part.endpoint,
+            ...prev, // the same endpoint and phase
+
             requests: prev.requests + part.requests,
             latency: Histogram.merge(prev.latency, part.latency),
             uncorrected: Histogram.merge(prev.uncorrected, part.uncorrected),
