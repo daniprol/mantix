@@ -41,4 +41,5 @@ pnpm install          # also installs the git hooks (prek)
 pnpm check            # format check, lint, typecheck, tests
 pnpm test             # Vitest, all packages
 pnpm format           # oxfmt
+pnpm build            # builds the web app, then the npm package (packages/server/dist)
 ```
