@@ -11,6 +11,8 @@ import { Url } from 'foldkit/url'
 
 import { RunInfo, Second, TestInfo } from '@mantix/api'
 
+import { Theme } from './theme.ts'
+
 export const Message = defineMessageUnion({
   // Moving between pages (Foldkit routing).
   ClickedLink: { request: UrlRequest },
@@ -37,6 +39,8 @@ export const Message = defineMessageUnion({
   SucceededStopRun: { run: RunInfo },
   FailedStopRun: { error: Schema.String },
   ClickedDismissError: {},
+  SelectedTheme: { theme: Theme },
+  CompletedApplyTheme: {},
   UpdatedLoadInput: { value: Schema.String },
   UpdatedDurationInput: { value: Schema.String },
 

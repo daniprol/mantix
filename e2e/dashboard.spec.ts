@@ -114,3 +114,26 @@ test('the Runs page lists every run and opens one', async ({ page }) => {
   await expect(page).toHaveURL(/\/runs\/\w+$/)
   await expect(page.getByRole('region', { name: 'Endpoints' })).toBeVisible()
 })
+
+test('the theme switch turns the page dark and remembers it', async ({
+  page,
+}) => {
+  await page.goto('/')
+  const html = page.locator('html')
+  const theme = page.getByRole('group', { name: 'Theme' })
+
+  await theme.getByRole('button', { name: 'Dark' }).click()
+  await expect(html).toHaveAttribute('data-theme', 'dark')
+
+  // A reload keeps the choice, applied before the app starts.
+  await page.reload()
+  await expect(html).toHaveAttribute('data-theme', 'dark')
+  await expect(theme.getByRole('button', { name: 'Dark' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  // System hands the choice back to the operating system.
+  await theme.getByRole('button', { name: 'System' }).click()
+  await expect(html).not.toHaveAttribute('data-theme')
+})

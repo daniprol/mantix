@@ -3,7 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Apply the saved theme before the first paint (see src/theme.ts).
+      try {
+        const theme = localStorage.getItem('mantix-theme')
+        if (theme === 'Light' || theme === 'Dark') {
+          document.documentElement.dataset.theme = theme.toLowerCase()
+        }
+      } catch {}
+    </script>
     <link href="/src/styles.css" rel="stylesheet" />
     <title>mantix</title>
   </head>

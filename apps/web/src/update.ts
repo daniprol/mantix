@@ -23,6 +23,7 @@ import {
 } from './analysis.ts'
 import type { TimelineInput } from './charts/store.ts'
 import {
+  ApplyTheme,
   FetchHistory,
   LoadExternal,
   LoadRun,
@@ -315,6 +316,13 @@ const step = (model: Model, message: Message): UpdateReturn =>
         }),
       }
     },
+
+    SelectedTheme: ({ theme }) => ({
+      model: modifyFields(model, { theme: () => theme }),
+      commands: [ApplyTheme({ theme })],
+    }),
+
+    CompletedApplyTheme: () => ({ model }),
 
     ClickedDismissError: () => ({
       model: modifyFields(model, { maybeActionError: () => Option.none() }),

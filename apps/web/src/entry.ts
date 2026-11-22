@@ -2,17 +2,20 @@
  * Boots the app in the browser. Everything else is pure definitions, so
  * tests can import them without starting a runtime.
  */
+import { Effect } from 'effect'
 import { Runtime } from 'foldkit'
 
-import { init } from './init.ts'
+import { Flags, init } from './init.ts'
 import { Message } from './message.ts'
 import { Model } from './model.ts'
 import { subscriptions } from './subscriptions.ts'
+import { savedTheme } from './theme.ts'
 import { update } from './update.ts'
 import { view } from './view/index.ts'
 
 const application = Runtime.makeApplication({
   Model,
+  Flags,
   init,
   update,
   view,
@@ -36,4 +39,6 @@ const application = Runtime.makeApplication({
   },
 })
 
-Runtime.run(application)
+Runtime.run(application, {
+  flags: Effect.map(savedTheme, theme => ({ theme })),
+})

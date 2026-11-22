@@ -70,6 +70,25 @@ describe('New run', () => {
       expect(role('link', { name: /Live/ })).toBeAbsent(),
     )
   })
+
+  test('the theme switch shows the current choice', () => {
+    scene(
+      { update, view },
+      given({ ...readyModel, theme: 'Dark' }),
+      ...acknowledgeTimeline,
+      inside(
+        role('group', { name: 'Theme' }),
+        expect(role('button', { name: 'Dark' })).toHaveAttr(
+          'aria-pressed',
+          'true',
+        ),
+        expect(role('button', { name: 'System' })).toHaveAttr(
+          'aria-pressed',
+          'false',
+        ),
+      ),
+    )
+  })
 })
 
 describe('a finished run', () => {

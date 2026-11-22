@@ -1,6 +1,6 @@
 /**
- * The left sidebar: the wordmark, the four sections, and where the runs
- * come from (project and branch) at the bottom.
+ * The left sidebar: the wordmark, the four sections, and at the bottom
+ * where the runs come from (project and branch) and the theme switch.
  */
 import { Array, Option, Record } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
@@ -17,6 +17,7 @@ import {
   runRouter,
   runsRouter,
 } from '../route.ts'
+import { themeSwitch } from './themeSwitch.ts'
 
 type Section = 'NewRun' | 'Live' | 'Runs' | 'Compare'
 
@@ -114,7 +115,7 @@ const liveItem = (
       ]),
   })
 
-/** The project and branch of the newest run, as a quiet footer. */
+/** The project and branch of the newest run, quietly. */
 const origin = (model: Model, h: HtmlBuilder<Message>): Html => {
   const maybeContext = Option.flatMap(
     model.history._tag === 'Loaded'
@@ -126,7 +127,7 @@ const origin = (model: Model, h: HtmlBuilder<Message>): Html => {
     onNone: () => h.empty,
     onSome: context =>
       h.div(
-        [h.Class('px-5 pb-5 text-[13px]')],
+        [h.Class('text-[13px]')],
         [
           h.div([h.Class('truncate text-ink')], [context.project]),
           context.git?.branch === undefined
@@ -172,7 +173,10 @@ export const sidebarView = (model: Model, h: HtmlBuilder<Message>): Html => {
         ],
       ),
       h.div([h.Class('flex-1')]),
-      origin(model, h),
+      h.div(
+        [h.Class('flex flex-col gap-4 px-5 pb-5')],
+        [origin(model, h), themeSwitch(model.theme, h)],
+      ),
     ],
   )
 }

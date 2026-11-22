@@ -7,6 +7,7 @@ import { Command, given, message, model, story } from 'foldkit/story'
 import { describe, expect, test } from 'vitest'
 
 import {
+  ApplyTheme,
   FetchHistory,
   LoadRun,
   NavigateInternal,
@@ -131,6 +132,19 @@ describe('a live run', () => {
         const data = next.runs[runningRun.id]
         expect(data?._tag === 'Loaded' && data.run.status).toBe('finished')
       }),
+    )
+  })
+})
+
+describe('the theme', () => {
+  test('choosing Dark switches the page and remembers it', () => {
+    story(
+      update,
+      given(readyModel),
+      message(Message.SelectedTheme({ theme: 'Dark' })),
+      model(next => expect(next.theme).toBe('Dark')),
+      Command.expectExact(ApplyTheme),
+      Command.resolve(ApplyTheme, Message.CompletedApplyTheme()),
     )
   })
 })
