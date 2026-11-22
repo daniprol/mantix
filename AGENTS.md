@@ -17,6 +17,7 @@ the _why_ and name the Effect or Foldkit idea being used.
 - `apps/docs`: Astro Starlight documentation site.
 - `apps/demo-target`: a small HTTP server with planted bugs to test against.
 - `examples/`: example test files.
+- `e2e/`: Playwright tests of the dashboard against `mantix ui`.
 
 ## Rules
 
@@ -41,4 +42,6 @@ pnpm install          # also installs the git hooks (prek)
 pnpm check            # format check, lint, typecheck, tests
 pnpm test             # Vitest, all packages
 pnpm format           # oxfmt
+pnpm knip             # unused files, exports and dependencies
+pnpm e2e              # Playwright, in e2e/ (build apps/web first)
 ```

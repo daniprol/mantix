@@ -1,0 +1,15 @@
+{
+  "name": "@mantix/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "End-to-end tests: the dashboard in a real browser, against mantix ui",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "effect-tsgo tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:"
+  }
+}
