@@ -28,8 +28,8 @@ export const Feed = defineTaggedUnion({
 })
 export type Feed = typeof Feed.Type
 
-export const StopRequest = Schema.Literals(['NotRequested', 'Requested'])
-export type StopRequest = typeof StopRequest.Type
+const StopRequest = Schema.Literals(['NotRequested', 'Requested'])
+type StopRequest = typeof StopRequest.Type
 
 export const RunState = defineTaggedUnion({
   /** Nothing started yet: the Ready screen. */
