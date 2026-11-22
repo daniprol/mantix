@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import type { EndpointStats } from '@mantix/api'
 
-import { evaluate, parseThreshold } from '../src/Thresholds.ts'
+import {
+  DEFAULT_ABORT_DELAY,
+  evaluate,
+  parseThreshold,
+} from '../src/Thresholds.ts'
 
 const stats = (p99: number, errorRate: number): EndpointStats => ({
   endpoint: 'All endpoints',
@@ -44,5 +48,22 @@ describe('thresholds', () => {
       actual: 0,
       passed: true,
     })
+  })
+
+  it('reads abortOnFail and its grace period', () => {
+    const plain = parseThreshold('errors < 1%')
+    expect(plain.abortOnFail).toBe(false)
+    const on = parseThreshold({ check: 'errors < 1%', abortOnFail: true })
+    expect(on.abortOnFail).toBe(true)
+    expect(on.abortDelay).toBe(DEFAULT_ABORT_DELAY)
+    const delayed = parseThreshold({
+      check: 'errors < 1%',
+      abortOnFail: { delay: '30s' },
+    })
+    expect(delayed.abortOnFail).toBe(true)
+    expect(delayed.abortDelay).toBe(30)
+    expect(() =>
+      parseThreshold({ check: 'errors < 1%', abortOnFail: { delay: -1 } }),
+    ).toThrow(/abort delay/)
   })
 })

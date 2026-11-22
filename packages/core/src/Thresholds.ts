@@ -3,7 +3,7 @@
  *
  *   "p99 < 250ms"    latency percentile (p50, p90, p95, p99) or max
  *   "max < 2s"       units: ms (default) or s
- *   "errors < 1%"    share of failed requests
+ *   "errors < 1%"    share of failed requests (ScriptErrors not counted)
  *   "rps > 100"      completed requests per second
  *
  * Operators: <, <=, >, >=. A threshold applies to all endpoints together,
@@ -11,17 +11,40 @@
  *
  *   { endpoint: "POST /checkout", check: "p99 < 500ms" }
  *
- * Add `abortOnFail: true` to stop the run as soon as the rule fails.
+ * Add `abortOnFail: true` to stop the run when the rule fails. It is only
+ * checked once the scenario has run for a grace period (5 s by default),
+ * so a few noisy first seconds can't end a run. Set your own delay with
+ * the object form (like k6's `delayAbortEval`):
+ *
+ *   { check: "errors < 5%", abortOnFail: { delay: "30s" } }
  */
 import type { EndpointStats, ThresholdResult } from '@mantix/api'
+
+import { type DurationInput, toSeconds } from './Duration.ts'
 
 export type ThresholdInput =
   | string
   | {
       readonly check: string
       readonly endpoint?: string
-      readonly abortOnFail?: boolean
+      /**
+       * Stop the run when this threshold fails. `true` waits the default
+       * grace period first; `{ delay }` sets it, counted from when the
+       * scenario starts (after `startAfter`). `{ delay: 0 }` aborts at the
+       * first failing second.
+       */
+      readonly abortOnFail?: boolean | { readonly delay: DurationInput }
     }
+
+/**
+ * The default grace period before `abortOnFail` is checked, in seconds.
+ * The first seconds of a run are the noisiest: connections are still being
+ * opened, the server's caches and JIT are cold, and a percentile over a
+ * few dozen requests jumps around. Five seconds is enough for that to
+ * settle at typical rates, yet a server that is really falling over still
+ * stops the run quickly.
+ */
+export const DEFAULT_ABORT_DELAY = 5
 
 export type Metric = 'p50' | 'p90' | 'p95' | 'p99' | 'max' | 'errors' | 'rps'
 export type Operator = '<' | '<=' | '>' | '>='
@@ -34,6 +57,8 @@ export interface Threshold {
   readonly operator: Operator
   readonly value: number
   readonly abortOnFail: boolean
+  /** Seconds after the scenario starts before `abortOnFail` applies. */
+  readonly abortDelay: number
 }
 
 const PATTERN =
@@ -64,13 +89,21 @@ export const parseThreshold = (input: ThresholdInput): Threshold => {
   if (unit === 's' && metric !== 'rps') {
     value *= 1000
   }
+  const abort = typeof input === 'string' ? undefined : input.abortOnFail
+  const abortDelay =
+    typeof abort === 'object' ? toSeconds(abort.delay) : DEFAULT_ABORT_DELAY
+  if (!(abortDelay >= 0)) {
+    throw new Error(`Threshold "${check}": the abort delay must be 0 or more.`)
+  }
   return {
     expression: check.trim(),
     endpoint: typeof input === 'string' ? undefined : input.endpoint,
     metric,
     operator,
     value,
-    abortOnFail: typeof input === 'string' ? false : input.abortOnFail === true,
+    // `{ delay }` turns abortOnFail on too; only `true` or an object do.
+    abortOnFail: abort === true || typeof abort === 'object',
+    abortDelay,
   }
 }
 

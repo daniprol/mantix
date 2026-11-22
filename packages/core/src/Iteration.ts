@@ -221,19 +221,24 @@ export const prepareScenario = (
       )
     })
 
+  // Setup and teardown send requests through the same client and recorder
+  // as the load; the phase only labels them (see ClientConfig.phase).
+  const setupConfig: ClientConfig = { ...config, phase: 'setup' }
+  const teardownConfig: ClientConfig = { ...config, phase: 'teardown' }
+
   const setup: Effect.Effect<unknown, SetupFailed> =
     scenario.options.setup === undefined
       ? Effect.undefined
       : (scenario._tag === 'AsyncScenario'
           ? fromAsync(signal =>
               scenario.options.setup!({
-                http: makeHttp(config, makeTiming(), signal),
+                http: makeHttp(setupConfig, makeTiming(), signal),
                 signal,
               }),
             )
           : Effect.suspend(() =>
               scenario.options.setup!({
-                http: makeEffectHttp(config, makeTiming()),
+                http: makeEffectHttp(setupConfig, makeTiming()),
                 signal: new AbortController().signal,
               }).pipe(wrapError),
             )
@@ -258,14 +263,14 @@ export const prepareScenario = (
       scenario._tag === 'AsyncScenario'
         ? fromAsync(signal =>
             scenario.options.teardown!({
-              http: makeHttp(config, makeTiming(), signal),
+              http: makeHttp(teardownConfig, makeTiming(), signal),
               signal,
               data,
             }),
           )
         : Effect.suspend(() =>
             scenario.options.teardown!({
-              http: makeEffectHttp(config, makeTiming()),
+              http: makeEffectHttp(teardownConfig, makeTiming()),
               signal: new AbortController().signal,
               data,
             }).pipe(wrapError),

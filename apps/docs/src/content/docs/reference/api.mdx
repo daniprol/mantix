@@ -86,6 +86,12 @@ What `iteration` receives:
 `setup` and `teardown` receive `http` and `signal`; `teardown` also gets
 `data`.
 
+Requests sent from `setup` and `teardown` are recorded like any other, under
+their own endpoint with the phase added: `POST /login (setup)`. They appear
+in the results table and error samples, and can have their own endpoint
+thresholds, but they are left out of the "All endpoints" totals (and the
+thresholds on them), so seeding data never changes the load's numbers.
+
 ## The http client
 
 | Method                                 | Returns                       |
@@ -165,11 +171,11 @@ models](/mantix/concepts/load-models/).
 
 A `ThresholdInput` is a string such as `'p99 < 250ms'`, or an object:
 
-| Field         | Type      | Notes                                           |
-| ------------- | --------- | ----------------------------------------------- |
-| `check`       | `string`  | The expression.                                 |
-| `endpoint`    | `string`  | Limit to one endpoint, e.g. `'POST /checkout'`. |
-| `abortOnFail` | `boolean` | Stop the run as soon as this fails.             |
+| Field         | Type                                  | Notes                                                              |
+| ------------- | ------------------------------------- | ------------------------------------------------------------------ |
+| `check`       | `string`                              | The expression.                                                    |
+| `endpoint`    | `string`                              | Limit to one endpoint, e.g. `'POST /checkout'`.                    |
+| `abortOnFail` | `boolean \| { delay: DurationInput }` | Stop the run when this fails, after a grace period (default `5s`). |
 
 Metrics: `p50`, `p90`, `p95`, `p99`, `max` (units `ms` or `s`), `errors`
 (in `%`), `rps`. Operators: `<`, `<=`, `>`, `>=`. See

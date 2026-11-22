@@ -19,7 +19,7 @@ import { Effect, Exit } from 'effect'
 import { STATUS_CODES } from 'node:http'
 import { Agent, request } from 'undici'
 
-import type { RequestSpan, SchemaDiff } from '@mantix/api'
+import type { Phase, RequestSpan, SchemaDiff } from '@mantix/api'
 
 import { toSeconds } from './Duration.ts'
 import {
@@ -66,6 +66,13 @@ export interface ClientConfig {
   readonly baseUrl: string | undefined
   readonly headers: Readonly<Record<string, string>> | undefined
   readonly timeoutMs: number
+  /**
+   * Set for the clients handed to setup and teardown. Their requests go
+   * through the same recorder as the load, labelled "GET /x (setup)", so
+   * they show up in the results without being mixed into the load's
+   * endpoints. See `isLoad` in @mantix/api.
+   */
+  readonly phase?: Phase | undefined
 }
 
 /**
@@ -257,7 +264,9 @@ export const send = async <Body>(
   options: RequestOptions<Body>,
   signal: AbortSignal | undefined,
 ): Promise<HttpResponse<Body>> => {
-  const endpoint = options.name ?? `${method} ${path}`
+  const name = options.name ?? `${method} ${path}`
+  const endpoint =
+    config.phase === undefined ? name : `${name} (${config.phase})`
   // Bad input (a missing baseUrl, say) throws here, before anything is
   // recorded: it is a ScriptError, not a request failure.
   const url = buildUrl(config, path, options)
@@ -323,6 +332,7 @@ export const send = async <Body>(
     }
     config.recorder.recordRequest({
       endpoint,
+      phase: config.phase,
       latencyMs,
       correctedMs: latencyMs + delay,
       status,
