@@ -14,10 +14,37 @@ import { IterationTrace } from './Trace.ts'
 // The error classes live in their own file; re-exported from here.
 export { ErrorKind } from './ErrorKind.ts'
 
+/**
+ * Does an error of this kind count as a failed request? Every kind does
+ * except ScriptError: a bug in the test is not the server's failure, so it
+ * must never move the `errors` figure or the "errors < 1%" threshold. It
+ * stays visible in `errorsByKind` and in the error samples.
+ */
+export const isRequestError = (kind: string): boolean => kind !== 'ScriptError'
+
+/** Failed requests in an `errors` record, without any ScriptErrors. */
+export const countRequestErrors = (
+  errors: Readonly<Record<string, number>>,
+): number =>
+  Object.entries(errors).reduce(
+    (sum, [kind, count]) => (isRequestError(kind) ? sum + count : sum),
+    0,
+  )
+
+/**
+ * Requests sent by a scenario's `setup` or `teardown` instead of by its
+ * load. They are recorded like any other request, but under their own
+ * endpoint (e.g. "POST /login (setup)") and marked with this phase.
+ */
+export const Phase = Schema.Literals(['setup', 'teardown'])
+export type Phase = typeof Phase.Type
+
 /** What happened on one endpoint during one second. */
 export const EndpointSecond = Schema.Struct({
   /** Method plus route template, e.g. "GET /cart/:id". */
   endpoint: Schema.String,
+  /** Set for setup and teardown requests; absent for load requests. */
+  phase: Schema.optionalKey(Phase),
   /** Requests that finished this second (successful or not). */
   requests: Schema.Finite,
   /** Latency measured from when the request should have started (µs). */
@@ -30,6 +57,16 @@ export const EndpointSecond = Schema.Struct({
   errors: Schema.Record(Schema.String, Schema.Finite),
 })
 export type EndpointSecond = typeof EndpointSecond.Type
+
+/**
+ * Is this part of the load? Setup and teardown requests are kept out of
+ * the "All endpoints" totals (and so out of thresholds on them): a setup
+ * that seeds a thousand records, or a slow first login on a cold server,
+ * says nothing about how the server handles the load. They still get
+ * their own rows, so they can be seen and given their own thresholds.
+ */
+export const isLoad = (part: EndpointSecond): boolean =>
+  part.phase === undefined
 
 /**
  * Where a response body did not match the `expect` schema: the exact

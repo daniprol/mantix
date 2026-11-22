@@ -12,6 +12,7 @@ import {
   type GeneratorHealth,
   Histogram,
   type IterationTrace,
+  type Phase,
   type SchemaDiff,
   type Second,
   fingerprint,
@@ -33,6 +34,8 @@ const MAX_MESSAGE_LENGTH = 300
 export interface RequestRecord {
   /** Method plus route template, e.g. "GET /cart/:id". */
   readonly endpoint: string
+  /** Set when the request came from setup or teardown, not the load. */
+  readonly phase?: Phase | undefined
   /** From the actual send to the end of the response body, in ms. */
   readonly latencyMs: number
   /** From the intended start to the end of the response body, in ms. */
@@ -51,6 +54,7 @@ export interface RequestRecord {
 
 /** Per-endpoint numbers for the second that is currently open. */
 interface EndpointCounters {
+  readonly phase: Phase | undefined
   requests: number
   readonly latency: Histogram.Recorder
   readonly uncorrected: Histogram.Recorder
@@ -90,6 +94,7 @@ export class Recorder {
     let counters = this.endpoints.get(record.endpoint)
     if (counters === undefined) {
       counters = {
+        phase: record.phase,
         requests: 0,
         latency: new Histogram.Recorder(),
         uncorrected: new Histogram.Recorder(),
@@ -220,6 +225,7 @@ export class Recorder {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([endpoint, counters]) => ({
         endpoint,
+        ...(counters.phase === undefined ? {} : { phase: counters.phase }),
         requests: counters.requests,
         latency: counters.latency.snapshot(),
         uncorrected: counters.uncorrected.snapshot(),

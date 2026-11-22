@@ -14,6 +14,8 @@ import {
   type RunInfo,
   type RunSummary,
   type Second,
+  countRequestErrors,
+  isLoad,
 } from '@mantix/api'
 
 type Style = Parameters<typeof styleText>[0]
@@ -52,13 +54,15 @@ export const secondLine = (
   second: Second,
   model: 'rate' | 'vus' | 'mixed',
 ): string => {
+  // The load only, like the totals: setup and teardown are left out.
+  const loadParts = second.endpoints.filter(isLoad)
   let requests = 0
   let errors = 0
-  for (const part of second.endpoints) {
+  for (const part of loadParts) {
     requests += part.requests
-    for (const count of Object.values(part.errors)) errors += count
+    errors += countRequestErrors(part.errors)
   }
-  const latency = Histogram.mergeAll(second.endpoints.map(e => e.latency))
+  const latency = Histogram.mergeAll(loadParts.map(e => e.latency))
   const p99 =
     latency.count === 0
       ? '–'

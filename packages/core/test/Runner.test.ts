@@ -2,9 +2,16 @@ import { Effect, Stream } from 'effect'
 import { afterAll, beforeAll } from 'vitest'
 
 import { assert, describe, it } from '@effect/vitest'
+import { summarizeSeconds } from '@mantix/api'
 
 import { rate, vus } from '../src/Load.ts'
-import { applyOverrides, startRun, testInfo } from '../src/Runner.ts'
+import {
+  type PlannedThreshold,
+  applyOverrides,
+  shouldAbort,
+  startRun,
+  testInfo,
+} from '../src/Runner.ts'
 import { scenario } from '../src/Scenario.ts'
 import { type TestServer, startServer } from './server.ts'
 
@@ -29,8 +36,10 @@ describe('runner', () => {
             'errors < 50%',
             { check: 'p99 < 1ms', endpoint: 'GET /wait' },
           ],
-          setup: async () => {
+          setup: async ({ http }) => {
             log.push('setup')
+            // Recorded like the load, but under its own "(setup)" row.
+            await http.get('/items/1', { name: 'GET /items/:id' })
             return 42
           },
           teardown: async ({ data }) => {
@@ -49,9 +58,17 @@ describe('runner', () => {
         assert.strictEqual(result.info.status, 'finished')
         assert.isAtLeast(result.seconds.length, 2)
 
-        const requests = result.seconds.flatMap(s => s.endpoints)
+        const parts = result.seconds.flatMap(s => s.endpoints)
+        const setupParts = parts.filter(e => e.phase === 'setup')
+        assert.deepStrictEqual(
+          setupParts.map(e => [e.endpoint, e.requests, e.statuses]),
+          [['GET /items/:id (setup)', 1, { '200': 1 }]],
+        )
+        // The totals (and thresholds) cover the load only.
+        const requests = parts.filter(e => e.phase === undefined)
         const total = requests.reduce((sum, e) => sum + e.requests, 0)
         assert.strictEqual(total, 40)
+        assert.strictEqual(summarizeSeconds(result.seconds).total.requests, 40)
         const started = result.seconds.reduce((sum, s) => sum + s.started, 0)
         const failed = result.seconds.reduce((sum, s) => sum + s.failed, 0)
         assert.strictEqual(started, 40)
@@ -157,6 +174,32 @@ describe('runner', () => {
     ),
   )
 
+  it.live('abortOnFail waits for its grace period, then stops the run', () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const run = yield* startRun(
+          scenario({
+            name: 'failing',
+            baseUrl: server.url,
+            load: rate.constant(20, { duration: 10 }),
+            // Every request fails, so the threshold fails from the start.
+            thresholds: [
+              { check: 'errors < 1%', abortOnFail: { delay: '2s' } },
+            ],
+            iteration: async ({ http }) => {
+              await http.get('/status/503')
+            },
+          }),
+        )
+        const result = yield* run.await
+        assert.strictEqual(result.info.status, 'aborted')
+        // Not at the first failing second (t = 0), but once 2 s had passed.
+        assert.isAtLeast(result.seconds.length, 2)
+        assert.isAtMost(result.seconds.length, 3)
+      }),
+    ),
+  )
+
   it.effect('rejects bad input before starting', () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -175,6 +218,32 @@ describe('runner', () => {
       }),
     ),
   )
+})
+
+describe('shouldAbort', () => {
+  const threshold = (
+    abortOnFail: boolean,
+    abortAt: number,
+  ): PlannedThreshold => ({
+    expression: 'errors < 1%',
+    endpoint: undefined,
+    metric: 'errors',
+    operator: '<',
+    value: 1,
+    abortOnFail,
+    abortDelay: abortAt,
+    abortAt,
+  })
+  const failed = { expression: 'errors < 1%', actual: 50, passed: false }
+  const passed = { ...failed, actual: 0, passed: true }
+
+  it('only aborts on a failing abortOnFail threshold after its grace period', () => {
+    const t = [threshold(true, 5)]
+    assert.isFalse(shouldAbort(t, [failed], 4))
+    assert.isTrue(shouldAbort(t, [failed], 5))
+    assert.isFalse(shouldAbort(t, [passed], 10))
+    assert.isFalse(shouldAbort([threshold(false, 0)], [failed], 10))
+  })
 })
 
 describe('overrides and test info', () => {
