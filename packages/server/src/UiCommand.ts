@@ -9,11 +9,12 @@ import { Argument, Command, Flag } from 'effect/cli'
 
 import { testInfo } from '@mantix/core'
 
+import { DevEvents } from './DevEvents.ts'
 import { CliExit, loadTest } from './RunCommand.ts'
 import { Runs } from './Runs.ts'
 import { findWebRoot, serverLayer } from './Server.ts'
 
-const describeServeError = (error: unknown, port: number): string => {
+export const describeServeError = (error: unknown, port: number): string => {
   const cause =
     error instanceof Error && error.cause instanceof Error ? error.cause : error
   if (
@@ -54,7 +55,7 @@ export const ui = Command.make(
       const url = `http://localhost:${args.port}`
 
       const app = serverLayer({ port: args.port, webRoot }).pipe(
-        Layer.provide(Runs.layer(test, args.file)),
+        Layer.provide([Runs.layer(test, args.file), DevEvents.idle]),
       )
 
       yield* Console.log(

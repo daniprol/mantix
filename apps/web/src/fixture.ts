@@ -46,6 +46,7 @@ export const runningRun: RunInfo = {
     { expression: 'p99 < 250ms', actual: 0, passed: true },
     { expression: 'errors < 1%', actual: 0, passed: true },
   ],
+  journal: [],
 }
 
 /** One second where every request took `ms` and `failed` of them failed. */

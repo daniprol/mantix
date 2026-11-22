@@ -129,6 +129,7 @@ export default defineConfig({
           items: [
             { label: 'Load models', slug: 'concepts/load-models' },
             { label: 'Reading results honestly', slug: 'concepts/results' },
+            { label: 'Steering a run', slug: 'concepts/steering' },
           ],
         },
         {
