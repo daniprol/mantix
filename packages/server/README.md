@@ -2,6 +2,10 @@
 
 Load tests that tell the truth, written in the TypeScript you already have.
 
+```sh
+npm install --save-dev mantix   # or: pnpm add -D mantix · bun add -d mantix
+```
+
 ```ts
 // checkout.ts
 import { rate, scenario } from 'mantix'
@@ -22,6 +26,9 @@ npx mantix run checkout.ts   # headless, prints a summary, exits 99 on failed th
 npx mantix ui checkout.ts    # live dashboard at http://localhost:4100
 ```
 
-Needs Node 22.19 or later, which runs `.ts` test files directly.
+With pnpm use `pnpm mantix …`, and with Bun `bunx mantix …`. Mantix needs
+Node 22.19 or later (which runs `.ts` test files directly), also when you use
+Bun.
 
-Documentation and source: https://github.com/daniprol/mantix
+Start with the [Quick start](https://daniprol.github.io/mantix/start/quick-start/).
+MIT licensed.

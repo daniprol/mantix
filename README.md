@@ -7,7 +7,20 @@ Tests are plain TypeScript (async by default, with an optional Effect API),
 the engine is built on [Effect](https://effect.website), and the live
 dashboard is a [Foldkit](https://foldkit.dev) app.
 
+## Install
+
+Mantix needs Node 22.19 or newer, which runs `.ts` test files directly.
+
+```sh
+npm install --save-dev mantix
+pnpm add --save-dev mantix
+bun add --dev mantix
+```
+
+## Write a test
+
 ```ts
+// checkout.ts
 import { rate, scenario } from 'mantix'
 
 export default scenario({
@@ -21,10 +34,20 @@ export default scenario({
 })
 ```
 
-> Work in progress: the first working version is being built through pull
-> requests.
+## Run it
 
-## Try it
+```sh
+npx mantix run checkout.ts   # in the terminal; exits 99 if a threshold fails
+npx mantix ui checkout.ts    # live dashboard at http://localhost:4100
+```
+
+With pnpm use `pnpm mantix …`, and with Bun `bunx mantix …`. Mantix itself
+runs on Node, so Node must be installed even when you use Bun.
+
+The [Quick start](https://daniprol.github.io/mantix/start/quick-start/)
+walks through a first test against a small demo server.
+
+## Try it from this repository
 
 The repo ships a small demo shop with a few planted bugs (a checkout that
 stalls every 30 seconds, occasional 503s, and a price that sometimes comes
@@ -58,12 +81,8 @@ pnpm install   # installs dependencies and the git hooks
 pnpm check     # format, lint, typecheck and test everything
 ```
 
-The documentation site lives in `apps/docs` (Astro Starlight) and is
-published to https://daniprol.github.io/mantix/ on every push to main:
-
-```sh
-pnpm --filter @mantix/docs dev     # http://localhost:4321/mantix/
-pnpm --filter @mantix/docs build   # static site in apps/docs/dist
-```
-
 See [AGENTS.md](./AGENTS.md) for the layout and conventions.
+
+## License
+
+[MIT](./LICENSE)
