@@ -10,7 +10,7 @@
  * whenever you're ready; it uses the latest code.
  */
 import { Console, Effect, Layer, Option, Queue, Result, Stream } from 'effect'
-import { Argument, Command, Flag } from 'effect/cli'
+import { Argument, Command } from 'effect/cli'
 import { watch } from 'node:fs'
 import { dirname, extname, resolve } from 'node:path'
 
@@ -20,11 +20,12 @@ import { type TestDefinition, probe, testInfo } from '@mantix/core'
 import { DevEvents } from './DevEvents.ts'
 import { probeReport } from './DevReport.ts'
 import { enableFreshImports, freshUrl } from './FreshImport.ts'
-import { CliExit, loadTest } from './RunCommand.ts'
+import { CliExit, loadTest, parseBaseUrl } from './RunCommand.ts'
 import { labelFlag } from './RunContext.ts'
 import { RunStore, historyFlags } from './RunStore.ts'
 import { Runs } from './Runs.ts'
 import { findWebRoot, serverLayer } from './Server.ts'
+import { baseUrlFlag, portFlag } from './Target.ts'
 import { describeServeError } from './UiCommand.ts'
 
 /** Files whose changes trigger a reload. */
@@ -55,7 +56,11 @@ const changes = (root: string): Stream.Stream<string> =>
   )
 
 /** The watcher, as a Layer that runs in the background next to the server. */
-const watcherLayer = (file: string, first: TestDefinition) =>
+const watcherLayer = (
+  file: string,
+  first: TestDefinition,
+  baseUrl: string | undefined,
+) =>
   Layer.effectDiscard(
     Effect.gen(function* () {
       const runs = yield* Runs
@@ -92,7 +97,7 @@ const watcherLayer = (file: string, first: TestDefinition) =>
       const reload = Effect.gen(function* () {
         version++
         const loaded = yield* Effect.result(
-          loadTest(file, freshUrl(file, version)),
+          loadTest(file, freshUrl(file, version), baseUrl),
         )
         if (Result.isFailure(loaded))
           return yield* failed(loaded.failure.message)
@@ -123,18 +128,17 @@ export const dev = Command.make(
     file: Argument.String('file').pipe(
       Argument.withDescription('The test file, e.g. examples/checkout.ts'),
     ),
-    port: Flag.Int('port').pipe(
-      Flag.withDescription('Port for the dashboard'),
-      Flag.withDefault(4100),
-    ),
+    port: portFlag,
     label: labelFlag,
+    baseUrl: baseUrlFlag,
     ...historyFlags,
   },
   Effect.fn('dev')(
     function* (args) {
       // Must happen before the first import of the test file.
       enableFreshImports(dirname(resolve(args.file)))
-      const test = yield* loadTest(args.file, freshUrl(args.file, 0))
+      const baseUrl = yield* parseBaseUrl(args.baseUrl)
+      const test = yield* loadTest(args.file, freshUrl(args.file, 0), baseUrl)
       yield* Effect.try({
         try: () => testInfo(test, args.file),
         catch: error =>
@@ -159,7 +163,7 @@ export const dev = Command.make(
       )
       const app = Layer.mergeAll(
         serverLayer({ port: args.port, webRoot: findWebRoot() }),
-        watcherLayer(args.file, test),
+        watcherLayer(args.file, test, baseUrl),
       ).pipe(Layer.provide(services))
 
       yield* Console.log(

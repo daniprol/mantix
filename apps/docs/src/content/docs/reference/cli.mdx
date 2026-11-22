@@ -5,11 +5,12 @@ description: Every mantix command and flag, its output and its exit codes.
 
 import { Aside } from '@astrojs/starlight/components'
 
-<Aside type="caution" title="Pre-release">
-  Until Mantix is on npm, run the CLI from a clone of the repository as `pnpm
-  mantix …` (it runs `packages/server/src/bin.ts` with Node). After the first
-  release it will be `npx mantix …`. Commands and flags may still change before
-  then.
+<Aside title="Running the CLI">
+  Install Mantix in your project with `npm install --save-dev mantix`, `pnpm add
+  --save-dev mantix` or `bun add --dev mantix`. Then run it as `npx mantix …`,
+  `pnpm mantix …` or `bunx mantix …`. Inside a clone of the Mantix repository,
+  `pnpm mantix …` runs the CLI straight from its TypeScript source. Commands and
+  flags may still change before version 1.0.
 </Aside>
 
 ## mantix run
@@ -18,7 +19,7 @@ Runs a test file headless, prints progress and a summary, checks thresholds,
 and exits with a code your CI can act on.
 
 ```sh
-mantix run <file> [--rate N] [--vus N] [--duration 30s] [--json out.json] [--quiet] [--label "text"] [--no-history]
+mantix run <file> [--rate N] [--vus N] [--duration 30s] [--base-url URL] [--json out.json] [--quiet] [--label "text"] [--no-history]
 ```
 
 | Flag              | What it does                                                                                                                                                      |
@@ -29,6 +30,7 @@ mantix run <file> [--rate N] [--vus N] [--duration 30s] [--json out.json] [--qui
 | `--duration 30s`  | How long to run. With `--rate` or `--vus`, the length of that constant load. On its own, the file's stages are stretched or squeezed to fit, keeping their shape. |
 | `--json out.json` | Also write the full summary as JSON to this file.                                                                                                                 |
 | `--quiet`         | Don't print the per-second lines; print only the final summary.                                                                                                   |
+| `--base-url URL`  | Send requests to this address instead of each scenario's `baseUrl`, e.g. a staging server. The test file is not changed.                                          |
 | `--label "text"`  | A note saved with the run, e.g. `"v2.3 on staging"`, to tell runs apart in the [run history](#run-context).                                                       |
 | `--no-history`    | Don't save this run to the [run history](#run-history).                                                                                                           |
 | `--history-file`  | Where the run history lives. Default `.mantix/history.db`.                                                                                                        |
@@ -82,7 +84,7 @@ honestly](/mantix/concepts/results/)).
 In a CI step, that is all you need:
 
 ```yaml
-- run: pnpm mantix run examples/checkout.ts --json results.json
+- run: npx mantix run checkout.ts --json results.json
 ```
 
 ### JSON summary
@@ -118,6 +120,7 @@ mantix ui <file> [--port 4100] [--label "text"]
 | ---------------- | ---------------------------------------------------------- |
 | `<file>`         | The test file, as for `mantix run`.                        |
 | `--port 4100`    | The port for the dashboard. Default `4100`.                |
+| `--base-url URL` | As for `mantix run`: every run hits this address.          |
 | `--label "text"` | A note saved with every run started from this dashboard.   |
 | `--no-history`   | Keep runs in memory only; nothing is saved.                |
 | `--history-file` | Where the run history lives. Default `.mantix/history.db`. |
@@ -130,6 +133,19 @@ dashboard](/mantix/start/dashboard/).
 
 The server only listens on your machine. Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd>.
 
+## Environment variables
+
+Some flags can also be set with environment variables, which is handy in CI
+or a container. A flag on the command line always wins.
+
+| Variable                                  | Same as                              |
+| ----------------------------------------- | ------------------------------------ |
+| `MANTIX_BASE_URL=https://staging.example` | `--base-url https://staging.example` |
+| `MANTIX_PORT=4200`                        | `--port 4200` (`ui` and `dev`)       |
+| `MANTIX_HISTORY_FILE=runs.db`             | `--history-file runs.db`             |
+| `MANTIX_HISTORY=false`                    | `--no-history`                       |
+| `MANTIX_LABEL="v2.3"`                     | `--label "v2.3"`                     |
+
 ## Run history
 
 Every run, from `mantix run`, `mantix ui` or `mantix dev`, is saved to a
@@ -137,14 +153,7 @@ SQLite file, `.mantix/history.db` in the folder you run Mantix from.
 Restart `mantix ui` and earlier runs of the same test file are still there.
 Add `.mantix/` to your `.gitignore`.
 
-Both history flags can also be set with environment variables, which is
-handy in CI or a container. A flag on the command line always wins.
-
-| Variable                      | Same as                  |
-| ----------------------------- | ------------------------ |
-| `MANTIX_HISTORY_FILE=runs.db` | `--history-file runs.db` |
-| `MANTIX_HISTORY=false`        | `--no-history`           |
-| `MANTIX_LABEL="v2.3"`         | `--label "v2.3"`         |
+The history flags can also be set with [environment variables](#environment-variables).
 
 The file keeps the raw data of each second (latency histograms, status
 codes, error counts), never precomputed percentiles, so any window of any
@@ -196,7 +205,7 @@ while you write it.
 mantix dev <file> [--port 4100] [--label "text"]
 ```
 
-It takes the same `--port`, `--label` and history flags as `mantix ui`.
+It takes the same `--port`, `--base-url`, `--label` and history flags as `mantix ui`.
 
 When it starts, and then every time you save the test file or any file in
 its folder, Mantix reloads the test, runs each scenario's `setup`, **one**
