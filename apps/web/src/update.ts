@@ -28,7 +28,7 @@ import { Feed, type Model, RunState, TestState } from './model.ts'
 type UpdateReturn = Update.Return<Model, Message>
 
 /** Put a Second in its place by `t`. A replay after reconnecting may resend some. */
-export const upsertSecond = (
+const upsertSecond = (
   seconds: ReadonlyArray<Second>,
   second: Second,
 ): ReadonlyArray<Second> => {

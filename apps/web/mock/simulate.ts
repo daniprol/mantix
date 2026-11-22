@@ -66,7 +66,7 @@ export const applyOverrides = (
 }
 
 /** The planned load at `t` seconds, by walking the stages. */
-export const plannedAt = (plan: LoadPlan, t: number): number => {
+const plannedAt = (plan: LoadPlan, t: number): number => {
   let from = plan.start
   let elapsed = 0
   for (const stage of plan.stages) {
