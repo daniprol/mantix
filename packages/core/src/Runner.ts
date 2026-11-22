@@ -28,7 +28,7 @@
  *   - a ticker closes one `Second` per elapsed second, appends it to the
  *     state, and checks thresholds on the cumulative stats;
  *   - the work races a stop signal, fired by `stop` or by a failing
- *     `abortOnFail` threshold.
+ *     `abortOnFail` threshold (once its grace period has passed).
  *
  * All state lives in one SubscriptionRef. `events` is built from its
  * `changes` stream, which is why late subscribers get a full replay.
@@ -172,12 +172,20 @@ const constantPlan = (
   duration: number,
 ): LoadPlan => ({ model, start: target, stages: [{ duration, target }] })
 
+/**
+ * A threshold plus the moment its `abortOnFail` starts to apply, in seconds
+ * since the run started: its scenario's `startAfter` plus the grace delay.
+ */
+export interface PlannedThreshold extends Threshold {
+  readonly abortAt: number
+}
+
 const planTest = (
   test: unknown,
   overrides: RunOverrides | undefined,
 ): {
   readonly scenarios: ReadonlyArray<Planned>
-  readonly thresholds: ReadonlyArray<Threshold>
+  readonly thresholds: ReadonlyArray<PlannedThreshold>
 } => {
   const scenarios = scenariosIn(test).map(scenario => {
     const options = scenario.options
@@ -202,8 +210,13 @@ const planTest = (
           : toSeconds(options.timeout) * 1000,
     }
   })
-  const thresholds = scenariosIn(test).flatMap(scenario =>
-    (scenario.options.thresholds ?? []).map(parseThreshold),
+  // The grace period counts from when the threshold's own scenario starts,
+  // so a scenario with `startAfter: '1m'` gets its full grace period too.
+  const thresholds = scenarios.flatMap(({ scenario, info }) =>
+    (scenario.options.thresholds ?? []).map(input => {
+      const threshold = parseThreshold(input)
+      return { ...threshold, abortAt: info.startAfter + threshold.abortDelay }
+    }),
   )
   return { scenarios, thresholds }
 }
@@ -317,6 +330,23 @@ const checkThresholds = (
   return thresholds.map(threshold => evaluate(threshold, total, endpoints))
 }
 
+/**
+ * Should a failing threshold stop the run? `results` lines up with
+ * `thresholds`; `elapsed` is seconds since the run started. Only thresholds
+ * marked `abortOnFail`, and only once their grace period is over.
+ */
+export const shouldAbort = (
+  thresholds: ReadonlyArray<PlannedThreshold>,
+  results: ReadonlyArray<ThresholdResult>,
+  elapsed: number,
+): boolean =>
+  results.some((result, i) => {
+    const threshold = thresholds[i]!
+    return (
+      !result.passed && threshold.abortOnFail && elapsed >= threshold.abortAt
+    )
+  })
+
 // ---------------------------------------------------------------------------
 // The run
 // ---------------------------------------------------------------------------
@@ -403,11 +433,9 @@ export const startRun = Effect.fn('startRun')(function* (
           },
         }
       })
-      // A failing threshold marked abortOnFail stops the run.
-      const abort = next.info.thresholds.some(
-        (result, i) => !result.passed && thresholds[i]!.abortOnFail,
-      )
-      if (abort) {
+      // A failing abortOnFail threshold stops the run. Second `t` has just
+      // closed, so t + 1 seconds of the run are over.
+      if (shouldAbort(thresholds, next.info.thresholds, t + 1)) {
         yield* Deferred.succeed(stopSignal, 'aborted')
       }
     })

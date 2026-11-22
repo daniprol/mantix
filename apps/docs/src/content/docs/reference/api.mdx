@@ -165,11 +165,11 @@ models](/mantix/concepts/load-models/).
 
 A `ThresholdInput` is a string such as `'p99 < 250ms'`, or an object:
 
-| Field         | Type      | Notes                                           |
-| ------------- | --------- | ----------------------------------------------- |
-| `check`       | `string`  | The expression.                                 |
-| `endpoint`    | `string`  | Limit to one endpoint, e.g. `'POST /checkout'`. |
-| `abortOnFail` | `boolean` | Stop the run as soon as this fails.             |
+| Field         | Type                                  | Notes                                                              |
+| ------------- | ------------------------------------- | ------------------------------------------------------------------ |
+| `check`       | `string`                              | The expression.                                                    |
+| `endpoint`    | `string`                              | Limit to one endpoint, e.g. `'POST /checkout'`.                    |
+| `abortOnFail` | `boolean \| { delay: DurationInput }` | Stop the run when this fails, after a grace period (default `5s`). |
 
 Metrics: `p50`, `p90`, `p95`, `p99`, `max` (units `ms` or `s`), `errors`
 (in `%`), `rps`. Operators: `<`, `<=`, `>`, `>=`. See

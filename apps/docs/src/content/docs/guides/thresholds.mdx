@@ -93,7 +93,7 @@ only starts later in the run doesn't fail at the first second.
 ## Stop early with abortOnFail
 
 Thresholds are checked while the run is going, not only at the end. Add
-`abortOnFail: true` to stop the whole run as soon as that rule fails:
+`abortOnFail: true` to stop the whole run when that rule fails:
 
 ```ts
 thresholds: [
@@ -104,6 +104,28 @@ thresholds: [
 
 This saves time (and your staging environment) when the server is clearly
 falling over. The run still writes its results, and the exit code is `99`.
+
+### The grace period
+
+The first seconds of a run are noisy: connections are still opening, the
+server's caches are cold, and a p99 over a few dozen requests jumps around.
+So `abortOnFail` is only checked once the scenario has run for **5 seconds**.
+Before that a failing threshold shows as failing, but does not stop the run.
+
+Set your own grace period with `delay` (like k6's `delayAbortEval`):
+
+```ts
+thresholds: [
+  // Give the server 30 s to warm up before giving up on it.
+  { check: 'p99 < 500ms', abortOnFail: { delay: '30s' } },
+  // Stop at the very first failing second.
+  { check: 'errors < 50%', abortOnFail: { delay: 0 } },
+],
+```
+
+The delay counts from when the threshold's scenario starts, so a scenario
+with `startAfter: '1m'` still gets its full grace period. The grace period
+only affects aborting: the final pass or fail covers the whole run.
 
 ## Exit codes
 
