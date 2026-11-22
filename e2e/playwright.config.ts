@@ -37,7 +37,8 @@ export default defineConfig({
       reuseExistingServer: !isCI,
     },
     {
-      command: `node packages/server/src/bin.ts ui examples/quick.ts --port ${DASHBOARD_PORT}`,
+      // --no-history: test runs should not land in the repo's run history.
+      command: `node packages/server/src/bin.ts ui examples/quick.ts --port ${DASHBOARD_PORT} --no-history`,
       cwd: '..',
       url: `http://localhost:${DASHBOARD_PORT}`,
       reuseExistingServer: !isCI,

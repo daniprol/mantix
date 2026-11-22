@@ -139,7 +139,7 @@ export class RunStore extends Context.Service<
 }
 
 /** Where the history is saved unless `--history-file` says otherwise. */
-export const DEFAULT_HISTORY_FILE = '.mantix/history.db'
+const DEFAULT_HISTORY_FILE = '.mantix/history.db'
 
 /**
  * The `--no-history` and `--history-file` flags, shared by run, ui and dev.
