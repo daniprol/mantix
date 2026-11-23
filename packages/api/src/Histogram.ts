@@ -69,7 +69,7 @@ export const bucketBounds = (index: number): readonly [number, number] => {
 }
 
 /** The value we report for a bucket: the middle of its range. */
-const bucketMidpoint = (index: number): number => {
+export const bucketMidpoint = (index: number): number => {
   const [lower, upper] = bucketBounds(index)
   return index < SUB_BUCKETS ? lower : (lower + upper) / 2
 }

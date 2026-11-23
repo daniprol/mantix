@@ -3,7 +3,8 @@
  * something interesting to point Mantix at.
  *
  *   GET  /health          always fast
- *   GET  /products/:sku   5–20 ms
+ *   GET  /products/:sku   5–20 ms, plus EXTRA_PRODUCT_MS (a planted
+ *                         slowdown, to try mantix compare)
  *   GET  /cart/:id        10–40 ms; ~1% of responses send `price` as a
  *                         string (schema drift, caught by `expect`)
  *   POST /cart/items      20–60 ms; body { cartId, sku, qty }
@@ -20,6 +21,11 @@ import {
 } from 'node:http'
 
 const port = Number(process.env['PORT'] ?? 4200)
+/**
+ * A slowdown to plant on purpose, to try `mantix compare`: every product
+ * page takes this many extra milliseconds.
+ */
+const extraProductMs = Number(process.env['EXTRA_PRODUCT_MS'] ?? 0)
 const startedAt = Date.now()
 
 /** Each 30 s cycle, checkout stalls during this window (ms into the cycle). */
@@ -96,7 +102,7 @@ const handle = async (
   }
 
   if (route === 'GET /products' && parts.length === 2) {
-    await sleep(between(5, 20))
+    await sleep(between(5, 20) + extraProductMs)
     const sku = parts[1]!
     return send(res, 200, { sku, name: `Product ${sku}`, price: priceOf(sku) })
   }

@@ -124,6 +124,7 @@ export const gatherContext = Effect.fn('gatherContext')(function* (
   options: {
     readonly cwd?: string | undefined
     readonly label?: string | undefined
+    readonly repeat?: RunContext['repeat']
   } = {},
 ) {
   const cwd = options.cwd ?? process.cwd()
@@ -155,6 +156,7 @@ export const gatherContext = Effect.fn('gatherContext')(function* (
       node: process.versions.node,
     },
     ...(label === undefined || label === '' ? {} : { label }),
+    ...(options.repeat === undefined ? {} : { repeat: options.repeat }),
   }
   return context
 })

@@ -170,7 +170,7 @@ describe('a live run', () => {
 })
 
 describe('comparing two runs', () => {
-  test('the list shows both p95s and the change', () => {
+  test('the list shows both p95s and the verdict on the change', () => {
     scene(
       { update, view },
       given(
@@ -188,7 +188,8 @@ describe('comparing two runs', () => {
       ...acknowledgeTimeline,
       expect(role('region', { name: 'Endpoints' })).toContainText('baseline'),
       expect(role('region', { name: 'Endpoints' })).toContainText('this run'),
-      expect(role('region', { name: 'Endpoints' })).toContainText('same'),
+      // The fixture's runs are tiny: too few requests to judge a p95.
+      expect(role('region', { name: 'Endpoints' })).toContainText('too few'),
       expect(role('link', { name: 'Change runs' })).toExist(),
     )
   })

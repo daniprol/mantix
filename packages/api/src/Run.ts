@@ -122,6 +122,20 @@ export const RunContext = Schema.Struct({
   }),
   /** Free text from `--label`, e.g. "v2.3 on staging". */
   label: Schema.optionalKey(Schema.String),
+  /**
+   * Set by `mantix run --repeat`: the runs of one repeat share a group,
+   * and `mantix compare` treats them as one side.
+   */
+  repeat: Schema.optionalKey(
+    Schema.Struct({
+      /** Shared by every run of the repeat. */
+      group: Schema.String,
+      /** Which run this is, from 1. */
+      index: Schema.Finite,
+      /** How many runs the repeat has. */
+      of: Schema.Finite,
+    }),
+  ),
 })
 export type RunContext = typeof RunContext.Type
 

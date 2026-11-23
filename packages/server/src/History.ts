@@ -7,6 +7,7 @@
 import { Effect, Stream } from 'effect'
 import { relative, resolve } from 'node:path'
 
+import type { RunContext } from '@mantix/api'
 import {
   type RunHandle,
   type RunOptions,
@@ -46,11 +47,12 @@ export const startRecordedRun = Effect.fn('startRecordedRun')(function* (
   options: Omit<RunOptions, 'context'> & {
     readonly file: string
     readonly label?: string | undefined
+    readonly repeat?: RunContext['repeat']
   },
 ) {
   const store = yield* RunStore
-  const { label, ...runOptions } = options
-  const context = yield* gatherContext({ label })
+  const { label, repeat, ...runOptions } = options
+  const context = yield* gatherContext({ label, repeat })
   const finish = (handle: RunHandle) =>
     Effect.flatMap(handle.snapshot, result =>
       save(store.finish(result.info, result.seconds)),

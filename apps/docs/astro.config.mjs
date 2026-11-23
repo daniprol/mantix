@@ -121,6 +121,7 @@ export default defineConfig({
               slug: 'guides/setup-and-mixes',
             },
             { label: 'Thresholds', slug: 'guides/thresholds' },
+            { label: 'Comparing runs', slug: 'guides/comparing-runs' },
             { label: 'Effect scenarios', slug: 'guides/effect' },
           ],
         },
