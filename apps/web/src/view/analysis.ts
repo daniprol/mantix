@@ -10,7 +10,15 @@
 import { Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
-import { type Analysis, checksFor, isRatePlan, secondsOf } from '../analysis.ts'
+import {
+  type Analysis,
+  checksFor,
+  isRatePlan,
+  isSteerable,
+  secondsOf,
+  stagedOf,
+  timelineLength,
+} from '../analysis.ts'
 import { compareRows } from '../domain/compare.ts'
 import {
   type Span,
@@ -19,6 +27,7 @@ import {
   spanSeconds,
 } from '../domain/span.ts'
 import { endpointRows, figuresOf, isOver, summarize } from '../domain/stats.ts'
+import { isPaused, plannedEnd } from '../domain/steer.ts'
 import { Message } from '../message.ts'
 import type { Feed, LoadedRun, Model } from '../model.ts'
 import {
@@ -32,6 +41,7 @@ import { comparedListView, endpointListView } from './endpoints.ts'
 import { checksView, figuresView } from './figures.ts'
 import { button, buttonLink, endpointName, segmented } from './parts.ts'
 import { barView, runIdentity, runStatus, testTitle } from './runBar.ts'
+import { steerView } from './steer.ts'
 import { timelineView } from './timeline.ts'
 
 // THE RUN BAR
@@ -135,8 +145,22 @@ const actionsView = (
     return [buttonLink('Change runs', '/compare', 'Secondary', h)]
   }
   if (!isOver(run)) {
+    const now = current.seconds.length
+    const isSending = model.controlRequest === 'Sending'
     return [
-      runStatus(run, current.seconds.length, h),
+      runStatus(
+        run,
+        now,
+        h,
+        plannedEnd(run.plan, run.journal, now, stagedOf(model, analysis)),
+      ),
+      isPaused(run.journal)
+        ? button('Resume', Message.ClickedResume(), 'Secondary', h, {
+            isDisabled: isSending,
+          })
+        : button('Pause', Message.ClickedPause(), 'Secondary', h, {
+            isDisabled: isSending,
+          }),
       button(
         current.stop === 'Requested' ? 'Stopping…' : 'Stop',
         Message.ClickedStop(),
@@ -248,13 +272,8 @@ export const analysisView = (
   )
   const checks = checksFor(current.run, maybeEndpoint)
   const isEndpoint = Option.isSome(maybeEndpoint)
-  const duration = Math.max(
-    current.run.duration,
-    current.seconds.length,
-    ...Option.toArray(maybeBaseline).map(b =>
-      Math.max(b.run.duration, b.seconds.length),
-    ),
-  )
+  // The list's curves share the timeline's clock, so they line up.
+  const duration = timelineLength(model, analysis)
   const listContext = {
     current: seconds,
     maybeBaseline: maybeBaselineSeconds,
@@ -353,6 +372,9 @@ export const analysisView = (
                   : 'All requests',
             },
             h,
+            isSteerable(analysis)
+              ? steerView(model, isRatePlan(current.run.plan), h)
+              : h.empty,
           ),
           below,
         ],

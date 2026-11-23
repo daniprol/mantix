@@ -7,10 +7,17 @@
  */
 import { Array, Option, pipe } from 'effect'
 
-import { Histogram, type Second, countRequestErrors, isLoad } from '@mantix/api'
+import {
+  Histogram,
+  type Second,
+  countRequestErrors,
+  isLoad,
+  plannedPath,
+  steer,
+} from '@mantix/api'
 
-import { plannedTotalAt } from '../domain/plan.ts'
 import { LAG_LIMIT_MS } from '../domain/stats.ts'
+import { controlLabel, steerNow } from '../domain/steer.ts'
 import type { LatencyLimit, TimelineInput } from './store.ts'
 
 /** One second, boiled down to what the charts need. */
@@ -28,6 +35,12 @@ type SecondColumn = Readonly<{
 
 type Columns = ReadonlyArray<Option.Option<SecondColumn>>
 
+/** A live change, flagged on the top track at second `t`. */
+type Mark = Readonly<{ t: number; label: string }>
+
+/** A stretch of the run spent paused, shaded on every track. */
+type Paused = Readonly<{ from: number; to: number }>
+
 export type TimelineSeries = Readonly<{
   x: Array<number>
   /** Index i holds second t = i - 1; index 0 is the start (no data). */
@@ -38,6 +51,10 @@ export type TimelineSeries = Readonly<{
   p95: Array<number | null>
   baselineP95: Array<number | null>
   planned: Array<number | null>
+  /** The change being typed, from the playhead on; null elsewhere. */
+  staged: Array<number | null>
+  marks: ReadonlyArray<Mark>
+  pauses: ReadonlyArray<Paused>
   load: Array<number | null>
   baselineLoad: Array<number | null>
   topTrack: TimelineInput['topTrack']
@@ -103,6 +120,65 @@ const valuesOf = (
     Option.match(column, { onNone: () => null, onSome: pick }),
   )
 
+/**
+ * The planned load at each x, and the staged one if a change is being
+ * typed. Behind the playhead it is what the plan and journal asked for;
+ * ahead of it, what they will ask for (`plannedPath`), so a spike or a new
+ * rate shows up on the dotted line the moment it is applied.
+ */
+const plannedLines = (
+  input: TimelineInput,
+  x: ReadonlyArray<number>,
+): Readonly<{
+  planned: Array<number | null>
+  staged: Array<number | null>
+}> => {
+  const none = x.map(() => null)
+  if (Array.isReadonlyArrayEmpty(input.plan)) {
+    return { planned: none, staged: none }
+  }
+  const steering = steer(input.plan, input.journal)
+  if (!input.isLive) {
+    return { planned: x.map(t => steering.total(t)), staged: none }
+  }
+  const now = steerNow(input.current.length, input.journal)
+  // Points every second from `now`, looked up by their time.
+  const ahead = (path: ReturnType<typeof plannedPath>) => {
+    const byTime = new Map(path.points.map(point => [point.t, point.target]))
+    return (t: number) => byTime.get(t) ?? 0
+  }
+  const future = ahead(plannedPath(input.plan, input.journal, now))
+  return {
+    planned: x.map(t => (t < now ? steering.total(t) : future(t))),
+    staged: Option.match(input.maybeStaged, {
+      onNone: () => none,
+      onSome: staged => {
+        const preview = ahead(
+          plannedPath(input.plan, input.journal, now, { staged }),
+        )
+        return x.map(t => (t < now ? null : preview(t)))
+      },
+    }),
+  }
+}
+
+/** Stretches spent paused; one still going ends at the playhead. */
+const pausesOf = (input: TimelineInput): ReadonlyArray<Paused> =>
+  input.journal
+    .reduce<ReadonlyArray<Paused>>((pauses, { at, control }) => {
+      if (control._tag === 'Pause') {
+        return [...pauses, { from: at, to: Number.POSITIVE_INFINITY }]
+      }
+      const open = pauses.at(-1)
+      return control._tag === 'Resume' && open !== undefined
+        ? [...pauses.slice(0, -1), { from: open.from, to: at }]
+        : pauses
+    }, [])
+    .map(pause => ({
+      from: pause.from,
+      to: Math.min(pause.to, input.current.length),
+    }))
+
 /** Errors per second drawn at full height, at least. */
 const ERRORS_FLOOR = 10
 
@@ -146,9 +222,12 @@ export const buildSeries = (input: TimelineInput): TimelineSeries => {
     p50: valuesOf(columns, column => column.p50),
     p95: valuesOf(columns, column => column.p95),
     baselineP95: valuesOf(baselineColumns, column => column.p95),
-    planned: Array.isReadonlyArrayEmpty(input.plan)
-      ? x.map(() => null)
-      : x.map(i => plannedTotalAt(input.plan, i)),
+    ...plannedLines(input, x),
+    marks: input.journal.flatMap(({ at, control }) => {
+      const label = controlLabel(control, input.isRate)
+      return label === '' ? [] : [{ t: at, label }]
+    }),
+    pauses: pausesOf(input),
     load: valuesOf(columns, column => column.load),
     baselineLoad: valuesOf(baselineColumns, column => column.load),
     topTrack: input.topTrack,

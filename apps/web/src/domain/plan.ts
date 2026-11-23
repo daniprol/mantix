@@ -3,7 +3,7 @@
  */
 import { Array, Option, pipe } from 'effect'
 
-import type { LoadPlan, RunOverrides, ScenarioInfo } from '@mantix/api'
+import type { LoadPlan, RunOverrides } from '@mantix/api'
 
 import * as Format from './format.ts'
 
@@ -106,20 +106,6 @@ export const plannedAt = (plan: LoadPlan, t: number): number =>
     ),
     state => Option.getOrElse(state.value, () => state.from),
   )
-
-/**
- * The planned load of all scenarios together at `t` (a scenario adds
- * nothing before its `startAfter` or after its plan ends).
- */
-export const plannedTotalAt = (
-  scenarios: ReadonlyArray<ScenarioInfo>,
-  t: number,
-): number =>
-  scenarios.reduce((sum, scenario) => {
-    const local = t - scenario.startAfter
-    const inside = local >= 0 && local <= planDuration(scenario.plan)
-    return inside ? sum + plannedAt(scenario.plan, local) : sum
-  }, 0)
 
 /** The corner points of a plan: [seconds, load] pairs, for drawing. */
 export const planPoints = (

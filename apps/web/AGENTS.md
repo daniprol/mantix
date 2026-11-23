@@ -41,5 +41,12 @@ The Mantix dashboard. It talks to the Mantix server through the shared
   Mono for numbers, hairlines not cards, amber only for live edge, selection
   and focus, red only for errors and failed checks, one primary button. No
   explanatory titles or sentences: labels and data.
+- Steering (live controls): Pause/Resume sit in the run bar next to Stop;
+  "Add spike" and "Change rate" sit above the timeline's right column and
+  open a small form there (`view/steer.ts`). The typed change is "staged":
+  drawn ahead of the playhead in amber until Apply sends it. The planned
+  line, the flags and the pause wash all come from the run's journal
+  through `steer`/`plannedPath` in `@mantix/api`, so the dashboard and the
+  engine always agree. `domain/steer.ts` reads the form and the journal.
 - Tests: `story.test.ts` (update), `scene.test.ts` (view) and
   `e2e/dashboard.spec.ts` (a real browser against `mantix ui`).

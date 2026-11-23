@@ -36,6 +36,10 @@ export const describeError = (error: unknown): string => {
     if (tag === 'RunNotFound') {
       return 'The server no longer knows this run.'
     }
+    // The server explains why it refused a control in one sentence.
+    if (tag === 'InvalidControl' && 'message' in error) {
+      return String(error.message)
+    }
     if (tag === 'HttpClientError' || tag === 'TransportError') {
       return 'Can’t reach the Mantix server.'
     }

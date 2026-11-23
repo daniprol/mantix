@@ -13,7 +13,13 @@ import { UrlRequest } from 'foldkit/navigation'
 import { modifyFields } from 'foldkit/struct'
 import { toString as urlToString } from 'foldkit/url'
 
-import type { RunInfo, Second } from '@mantix/api'
+import {
+  type Control,
+  type JournalEntry,
+  type RunInfo,
+  type Second,
+  plannedPath,
+} from '@mantix/api'
 
 import {
   analysisOf,
@@ -29,6 +35,7 @@ import {
   LoadRun,
   LoadTest,
   NavigateInternal,
+  SendControl,
   StartRun,
   StopRun,
   SyncTimeline,
@@ -36,6 +43,7 @@ import {
 import { isValid, readLoadForm } from './domain/adjust.ts'
 import { Span } from './domain/span.ts'
 import { isOver } from './domain/stats.ts'
+import { DEFAULT_SPIKE, stagedControl, steerNow } from './domain/steer.ts'
 import { Message } from './message.ts'
 import {
   Feed,
@@ -44,6 +52,7 @@ import {
   type LoadedRun,
   type Model,
   RunData,
+  SteerForm,
   TestState,
 } from './model.ts'
 import {
@@ -124,6 +133,52 @@ const liveRunOnScreen = (model: Model): Option.Option<LoadedRun> =>
     isOver(current.run) ? Option.none() : Option.some(current),
   )
 
+// STEERING
+
+/**
+ * Post a control for the live run on screen. One at a time: a second click
+ * while the first is on its way does nothing.
+ */
+const sendControl = (model: Model, control: Control): UpdateReturn =>
+  Option.match(liveRunOnScreen(model), {
+    onNone: () => ({ model }),
+    onSome: live =>
+      model.controlRequest === 'Sending'
+        ? { model }
+        : {
+            model: modifyFields(model, {
+              controlRequest: () => 'Sending',
+              maybeActionError: () => Option.none(),
+            }),
+            commands: [SendControl({ runId: live.run.id, control })],
+          },
+  })
+
+/** Add an applied control to the run's journal, unless the stream already did. */
+const withEntry = (
+  journal: ReadonlyArray<JournalEntry>,
+  entry: JournalEntry,
+): ReadonlyArray<JournalEntry> =>
+  Array.some(journal, known => known.seq === entry.seq)
+    ? journal
+    : Array.append(journal, entry)
+
+/** The load the run is asking for right now, to start "Change rate" from. */
+const currentTarget = (live: LoadedRun): string => {
+  const path = plannedPath(
+    live.run.plan,
+    live.run.journal,
+    steerNow(live.seconds.length, live.run.journal),
+  )
+  const target = path.points[0]?.target ?? 0
+  return String(Math.round(target))
+}
+
+/** Replace the change being typed. */
+const withForm = (model: Model, steerForm: SteerForm): UpdateReturn => ({
+  model: modifyFields(model, { steerForm: () => steerForm }),
+})
+
 // STARTING
 
 const start = (model: Model): UpdateReturn => {
@@ -152,6 +207,8 @@ const changeRoute = (model: Model, route: AppRoute): UpdateReturn => {
     // A new run (or pair of runs) starts with "Now"; drilling into one of
     // its endpoints and back keeps what was selected.
     span: span => (sameRuns ? span : Span.Now()),
+    // A half-typed change belongs to the page it was typed on.
+    steerForm: () => SteerForm.Closed(),
   })
   return loadRuns(moved, runIdsOf(route))
 }
@@ -168,6 +225,9 @@ const sameRange = (
 /** Would the timeline draw anything different? Cheap: arrays by reference. */
 const sameInput = (a: TimelineInput, b: TimelineInput): boolean =>
   a.current === b.current &&
+  a.journal === b.journal &&
+  JSON.stringify(Option.getOrNull(a.maybeStaged)) ===
+    JSON.stringify(Option.getOrNull(b.maybeStaged)) &&
   Option.getOrNull(a.maybeBaseline) === Option.getOrNull(b.maybeBaseline) &&
   a.duration === b.duration &&
   a.topTrack === b.topTrack &&
@@ -317,6 +377,101 @@ const step = (model: Model, message: Message): UpdateReturn =>
       }
     },
 
+    ClickedPause: () => sendControl(model, { _tag: 'Pause' }),
+
+    ClickedResume: () => sendControl(model, { _tag: 'Resume' }),
+
+    // The two links open their form, or close it when it is already open.
+    ClickedAddSpike: () =>
+      withForm(
+        model,
+        model.steerForm._tag === 'Spike'
+          ? SteerForm.Closed()
+          : SteerForm.Spike(DEFAULT_SPIKE),
+      ),
+
+    ClickedChangeRate: () =>
+      Option.match(liveRunOnScreen(model), {
+        onNone: () => ({ model }),
+        onSome: live =>
+          withForm(
+            model,
+            model.steerForm._tag === 'Rate'
+              ? SteerForm.Closed()
+              : SteerForm.Rate({ target: currentTarget(live), over: '' }),
+          ),
+      }),
+
+    ClickedCancelChange: () => withForm(model, SteerForm.Closed()),
+
+    UpdatedSpikeFactor: ({ value }) => {
+      const form = model.steerForm
+      return form._tag === 'Spike'
+        ? withForm(
+            model,
+            SteerForm.Spike({ factor: value, duration: form.duration }),
+          )
+        : { model }
+    },
+
+    UpdatedSpikeDuration: ({ value }) => {
+      const form = model.steerForm
+      return form._tag === 'Spike'
+        ? withForm(
+            model,
+            SteerForm.Spike({ factor: form.factor, duration: value }),
+          )
+        : { model }
+    },
+
+    UpdatedRateTarget: ({ value }) => {
+      const form = model.steerForm
+      return form._tag === 'Rate'
+        ? withForm(model, SteerForm.Rate({ target: value, over: form.over }))
+        : { model }
+    },
+
+    UpdatedRateOver: ({ value }) => {
+      const form = model.steerForm
+      return form._tag === 'Rate'
+        ? withForm(model, SteerForm.Rate({ target: form.target, over: value }))
+        : { model }
+    },
+
+    // Apply (or Enter): send what is staged, if it makes sense.
+    SubmittedChange: () =>
+      Option.match(stagedControl(model.steerForm), {
+        onNone: () => ({ model }),
+        onSome: control => sendControl(model, control),
+      }),
+
+    // The stream will bring the same entry; adding it now means the flag
+    // and the new dotted line appear without waiting for the next second.
+    SucceededSendControl: ({ runId, entry }) => ({
+      model: modifyFields(
+        modifyRun(model, runId, live =>
+          modifyFields(live, {
+            run: run =>
+              modifyFields(run, {
+                journal: journal => withEntry(journal, entry),
+              }),
+          }),
+        ),
+        {
+          controlRequest: () => 'Idle',
+          steerForm: () => SteerForm.Closed(),
+        },
+      ),
+    }),
+
+    // Keep the form open, so the change can be fixed and sent again.
+    FailedSendControl: ({ error }) => ({
+      model: modifyFields(model, {
+        controlRequest: () => 'Idle',
+        maybeActionError: () => Option.some(error),
+      }),
+    }),
+
     SelectedTheme: ({ theme }) => ({
       model: modifyFields(model, { theme: () => theme }),
       commands: [ApplyTheme({ theme })],
@@ -353,10 +508,14 @@ const step = (model: Model, message: Message): UpdateReturn =>
         loadedRun(model, run.id),
         known => !isOver(known.run),
       )
+      const updated = modifyRun(model, run.id, known =>
+        modifyFields(known, { run: () => run }),
+      )
       return {
-        model: modifyRun(model, run.id, known =>
-          modifyFields(known, { run: () => run }),
-        ),
+        // Once the run is over there is nothing left to steer.
+        model: isOver(run)
+          ? modifyFields(updated, { steerForm: () => SteerForm.Closed() })
+          : updated,
         commands: wasLive && isOver(run) ? [FetchHistory()] : [],
       }
     },

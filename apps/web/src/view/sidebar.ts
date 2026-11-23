@@ -9,6 +9,7 @@ import type { RunInfo } from '@mantix/api'
 
 import * as Format from '../domain/format.ts'
 import { isOver } from '../domain/stats.ts'
+import { isPaused } from '../domain/steer.ts'
 import type { Message } from '../message.ts'
 import type { Model } from '../model.ts'
 import {
@@ -102,7 +103,9 @@ const liveItem = (
           [
             h.span([
               h.Class(
-                'live-dot inline-block size-[6px] rounded-full bg-accent',
+                isPaused(live.journal)
+                  ? 'inline-block size-[6px] rounded-full bg-ink-3'
+                  : 'live-dot inline-block size-[6px] rounded-full bg-accent',
               ),
               h.AriaHidden(true),
             ]),

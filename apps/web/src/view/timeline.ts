@@ -44,9 +44,11 @@ const trackName = (
     ],
   )
 
+/** `overlay` goes over the timeline, e.g. the steering controls. */
 export const timelineView = (
   labels: TrackLabels,
   h: HtmlBuilder<Message>,
+  overlay: Html = h.empty,
 ): Html =>
   h.section(
     [
@@ -92,5 +94,6 @@ export const timelineView = (
         ),
         h.OnMount(MountTimeline()),
       ]),
+      overlay,
     ],
   )

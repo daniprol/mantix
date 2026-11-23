@@ -6,6 +6,8 @@
 import { Array, Option, Record, pipe } from 'effect'
 
 import type {
+  Control,
+  JournalEntry,
   RunInfo,
   ScenarioInfo,
   Second,
@@ -17,6 +19,7 @@ import { readLoadForm } from './domain/adjust.ts'
 import { applyOverrides, planDuration } from './domain/plan.ts'
 import { effectiveSpan } from './domain/span.ts'
 import { focusSeconds, isOver } from './domain/stats.ts'
+import { plannedEnd, stagedControl } from './domain/steer.ts'
 import * as Threshold from './domain/threshold.ts'
 import { type LoadedRun, type Model, TestState } from './model.ts'
 import { AppRoute } from './route.ts'
@@ -122,20 +125,62 @@ const latencyLimit = (
 export const isRatePlan = (plan: ReadonlyArray<ScenarioInfo>): boolean =>
   plan.every(scenario => scenario.plan.model === 'rate')
 
-const runLength = (loaded: LoadedRun): number =>
-  Math.max(loaded.run.duration, loaded.seconds.length)
+/**
+ * Can this page steer its run? Only a live run's own page: not a
+ * comparison, and not one endpoint (which has no plan of its own).
+ */
+export const isSteerable = (analysis: Analysis): boolean =>
+  !isOver(analysis.current.run) &&
+  Option.isNone(analysis.maybeBaseline) &&
+  Option.isNone(analysis.maybeEndpoint)
+
+/** The change being typed, if this page can steer its run. */
+export const stagedOf = (
+  model: Model,
+  analysis: Analysis,
+): Option.Option<Control> =>
+  isSteerable(analysis) ? stagedControl(model.steerForm) : Option.none()
+
+/**
+ * How many seconds a run takes on the timeline. A finished run: what it
+ * took. A live one: until its planned end, which pauses, spikes and the
+ * change being typed can move.
+ */
+const runLength = (
+  loaded: LoadedRun,
+  maybeStaged: Option.Option<Control> = Option.none(),
+): number => {
+  const now = loaded.seconds.length
+  return isOver(loaded.run)
+    ? Math.max(loaded.run.duration, now)
+    : Math.max(
+        now,
+        Math.ceil(
+          plannedEnd(loaded.run.plan, loaded.run.journal, now, maybeStaged),
+        ),
+      )
+}
+
+/** The length of the timeline's clock: the longer of the runs on it. */
+export const timelineLength = (model: Model, analysis: Analysis): number =>
+  Math.max(
+    runLength(analysis.current, stagedOf(model, analysis)),
+    Option.match(analysis.maybeBaseline, {
+      onNone: () => 0,
+      onSome: baseline => runLength(baseline),
+    }),
+  )
 
 const analysisInput = (model: Model, analysis: Analysis): TimelineInput => {
   const { current, maybeBaseline, maybeEndpoint } = analysis
   const isEndpoint = Option.isSome(maybeEndpoint)
   const span = effectiveSpan(model.span, !isOver(current.run))
   return {
-    duration: Math.max(
-      runLength(current),
-      Option.match(maybeBaseline, { onNone: () => 0, onSome: runLength }),
-    ),
+    duration: timelineLength(model, analysis),
     topTrack: isEndpoint ? 'Throughput' : 'Load',
     plan: isEndpoint ? [] : current.run.plan,
+    journal: current.run.journal,
+    maybeStaged: stagedOf(model, analysis),
     isRate: isRatePlan(current.run.plan),
     current: secondsOf(current, maybeEndpoint),
     maybeBaseline: Option.map(maybeBaseline, baseline =>
@@ -163,6 +208,7 @@ const plannedScenarios = (model: Model): ReadonlyArray<ScenarioInfo> =>
 
 /** One shared empty list, so the plan's input stays the same between updates. */
 const NO_SECONDS: ReadonlyArray<Second> = []
+const NO_JOURNAL: ReadonlyArray<JournalEntry> = []
 
 const planInput = (model: Model): Option.Option<TimelineInput> =>
   TestState.match(model.test, {
@@ -179,6 +225,8 @@ const planInput = (model: Model): Option.Option<TimelineInput> =>
         ),
         topTrack: 'Load',
         plan,
+        journal: NO_JOURNAL,
+        maybeStaged: Option.none(),
         isRate: isRatePlan(test.scenarios),
         current: NO_SECONDS,
         maybeBaseline: Option.none(),

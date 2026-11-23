@@ -9,6 +9,7 @@ import type { RunInfo, TestInfo } from '@mantix/api'
 import * as Format from '../domain/format.ts'
 import { gitOf, startedAt } from '../domain/identity.ts'
 import { isOver } from '../domain/stats.ts'
+import { isPaused } from '../domain/steer.ts'
 import { STATUS_WORDS, checksSummary } from '../domain/verdict.ts'
 import type { Message } from '../message.ts'
 
@@ -77,13 +78,19 @@ export const runIdentity = (
     ],
   )
 
-/** "● Running 03:12 / 05:00" or "Finished · 2 of 3 checks passed". */
+/**
+ * "● Running 03:12 / 05:00", "○ Paused 03:12 / 05:40" or
+ * "Finished · 2 of 3 checks passed". `end` is the planned end, which
+ * pauses and live changes can move (domain/steer.ts).
+ */
 export const runStatus = (
   run: RunInfo,
   secondsSeen: number,
   h: HtmlBuilder<Message>,
+  end: number = run.duration,
 ): Html => {
   const isLive = !isOver(run)
+  const isRunPaused = isLive && isPaused(run.journal)
   const checks = checksSummary(run)
   const hasFailed = run.thresholds.some(t => !t.passed)
   return h.div(
@@ -94,16 +101,18 @@ export const runStatus = (
     ],
     isLive
       ? [
+          // Paused: the dot stops breathing and turns gray.
           h.span([
-            h.Class('live-dot inline-block size-[7px] rounded-full bg-accent'),
+            h.Class(
+              isRunPaused
+                ? 'inline-block size-[7px] rounded-full bg-ink-3'
+                : 'live-dot inline-block size-[7px] rounded-full bg-accent',
+            ),
             h.AriaHidden(true),
           ]),
-          h.span([], [STATUS_WORDS[run.status]]),
+          h.span([], [isRunPaused ? 'Paused' : STATUS_WORDS[run.status]]),
           h.span([h.Class('num')], [Format.clock(secondsSeen)]),
-          h.span(
-            [h.Class('num text-ink-2')],
-            [`/ ${Format.clock(run.duration)}`],
-          ),
+          h.span([h.Class('num text-ink-2')], [`/ ${Format.clock(end)}`]),
         ]
       : [
           h.span([], [STATUS_WORDS[run.status]]),
