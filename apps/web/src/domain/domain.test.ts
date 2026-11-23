@@ -1,10 +1,10 @@
 import { Option } from 'effect'
 import { describe, expect, test } from 'vitest'
 
-import type { LoadPlan } from '@mantix/api'
+import type { Compare, LoadPlan } from '@mantix/api'
 
 import { makeSecond } from '../fixture.ts'
-import { latencyChange } from './compare.ts'
+import { endpointsVerdict, readChange } from './compare.ts'
 import * as Format from './format.ts'
 import { applyOverrides, describePlan, plannedAt } from './plan.ts'
 import { Span, effectiveSpan, spanLabel, spanSeconds } from './span.ts'
@@ -117,11 +117,110 @@ describe('threshold', () => {
 })
 
 describe('compare', () => {
-  test('changes under 5% are the same; the rest say which way', () => {
-    expect(latencyChange(248, 212)).toBe('15% faster')
-    expect(latencyChange(196, 128)).toBe('35% faster')
-    expect(latencyChange(421, 438)).toBe('same')
-    expect(latencyChange(100, 150)).toBe('50% slower')
+  const change = (overrides: Partial<Compare.Change>): Compare.Change => ({
+    metric: 'p95',
+    baseline: 100,
+    current: 112,
+    change: 0.12,
+    range: { low: 0.08, high: 0.16 },
+    verdict: 'Worse',
+    ...overrides,
+  })
+
+  test('a real change says which way, by how much, and its range', () => {
+    const reading = readChange(change({}), 0.05, 5000)
+    expect(reading.word).toBe('12% slower')
+    expect(reading.maybeRange).toEqual(Option.some('+8 to +16%'))
+    expect(reading.tone).toBe('Worse')
+    const faster = readChange(
+      change({
+        change: -0.2,
+        range: { low: -0.25, high: -0.15 },
+        verdict: 'Better',
+      }),
+      0.05,
+      5000,
+    )
+    expect(faster.word).toBe('20% faster')
+    expect(faster.maybeRange).toEqual(Option.some('−25 to −15%'))
+  })
+
+  test('"same" and "unclear" are different answers', () => {
+    expect(
+      readChange(
+        change({
+          change: 0.01,
+          range: { low: -0.02, high: 0.03 },
+          verdict: 'NoChange',
+        }),
+        0.05,
+        5000,
+      ).word,
+    ).toBe('same')
+    const unclear = readChange(
+      change({
+        change: 0.07,
+        range: { low: -0.1, high: 0.25 },
+        verdict: 'CantTell',
+        reason: 'Noisy',
+      }),
+      0.05,
+      5000,
+    )
+    expect(unclear.word).toBe('unclear')
+    expect(unclear.maybeRange).toEqual(Option.some('−10 to +25%'))
+    const few = readChange(
+      change({ verdict: 'CantTell', reason: 'TooFewRequests' }),
+      0.05,
+      140,
+    )
+    expect(few.word).toBe('too few')
+    expect(few.hint).toContain('140')
+  })
+
+  test('errors change in percentage points', () => {
+    const reading = readChange(
+      change({
+        metric: 'errors',
+        change: 0.0014,
+        range: { low: 0.0004, high: 0.0025 },
+      }),
+      0.05,
+      5000,
+    )
+    expect(reading.word).toBe('+0.14 pts')
+    expect(reading.maybeRange).toEqual(Option.some('+0.04 to +0.25 pts'))
+  })
+
+  test('the endpoints figure leads with the slowdowns', () => {
+    const row = (verdict: Compare.Verdict): Compare.EndpointComparison => ({
+      endpoint: 'GET /a',
+      isLoad: true,
+      baselineRequests: 5000,
+      currentRequests: 5000,
+      p50: change({ verdict }),
+      p95: change({ verdict }),
+      p99: change({ verdict }),
+      errors: change({ verdict }),
+    })
+    const comparison: Compare.Comparison = {
+      total: row('Worse'),
+      endpoints: [
+        row('Worse'),
+        row('NoChange'),
+        row('NoChange'),
+        row('CantTell'),
+      ],
+      band: 0.05,
+      blockSeconds: 5,
+      isPaired: true,
+      leftOut: { baseline: 0, current: 0 },
+    }
+    expect(endpointsVerdict(comparison)).toEqual({
+      value: '1 slower',
+      isWorse: true,
+      note: '2 same · 1 unclear',
+    })
   })
 })
 

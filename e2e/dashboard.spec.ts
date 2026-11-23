@@ -102,6 +102,10 @@ test('two runs can be compared, down to one endpoint', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Percentiles' })).toContainText(
     'baseline',
   )
+  // A verdict on each percentile's change (a short run: "too few").
+  await expect(page.getByRole('region', { name: 'Percentiles' })).toContainText(
+    'change',
+  )
   await page.getByRole('link', { name: 'Back' }).click()
   await expect(page).toHaveURL(/\/compare\/\w+\/\w+$/)
 })

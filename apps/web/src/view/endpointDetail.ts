@@ -1,12 +1,14 @@
 /**
  * Under the timeline on an endpoint's page: its latency percentiles, its
  * status codes and its failures grouped by problem. When comparing, each
- * one shows the baseline next to this run.
+ * one shows the baseline next to this run, and the percentiles get a row
+ * with the verdict on each change.
  */
 import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import {
+  type Compare,
   type EndpointStats,
   type ErrorGroup,
   type Second,
@@ -14,9 +16,11 @@ import {
 } from '@mantix/api'
 
 import { COLUMNS } from '../charts/layout.ts'
+import { readChange } from '../domain/compare.ts'
 import * as Format from '../domain/format.ts'
 import { statusCounts } from '../domain/stats.ts'
 import type { Message } from '../message.ts'
+import { changeView } from './change.ts'
 import { missing, quantity } from './parts.ts'
 
 /** One side of the page: this run, or the baseline. */
@@ -69,8 +73,35 @@ const latencyRow = (
     ],
   )
 
+/** The compared endpoint and the band that counts as too small to matter. */
+export type Compared = Readonly<{
+  row: Compare.EndpointComparison
+  band: number
+}>
+
+/** The verdicts under p50, p95 and p99; the other columns have none. */
+const changeRow = ({ row, band }: Compared, h: HtmlBuilder<Message>): Html => {
+  const requests = Math.min(row.baselineRequests, row.currentRequests)
+  const cell = (name: (typeof PERCENTILES)[number]) =>
+    name === 'p50' || name === 'p95' || name === 'p99'
+      ? changeView(readChange(row[name], band, requests), h)
+      : h.empty
+  return h.keyed('tr')(
+    'change',
+    [h.Class('border-t border-hairline')],
+    [
+      h.td([h.Class('pt-2 pr-6 align-top text-[12px] text-ink-2')], ['change']),
+      ...PERCENTILES.map(name =>
+        h.td([h.Class('pt-2 pr-8 text-right align-top')], [cell(name)]),
+      ),
+      h.td([]),
+    ],
+  )
+}
+
 const latencyBlock = (
   sides: ReadonlyArray<Side>,
+  maybeCompared: Option.Option<Compared>,
   h: HtmlBuilder<Message>,
 ): Html =>
   block(
@@ -98,9 +129,14 @@ const latencyBlock = (
           ),
           h.tbody(
             [],
-            sides.map((side, index) =>
-              latencyRow(side, index > 0, sides.length > 1, h),
-            ),
+            [
+              ...sides.map((side, index) =>
+                latencyRow(side, index > 0, sides.length > 1, h),
+              ),
+              ...Option.toArray(
+                Option.map(maybeCompared, compared => changeRow(compared, h)),
+              ),
+            ],
           ),
         ],
       ),
@@ -255,13 +291,14 @@ const failuresBlock = (
 export const endpointDetailView = (
   current: Side,
   maybeBaseline: Option.Option<Side>,
+  maybeCompared: Option.Option<Compared>,
   h: HtmlBuilder<Message>,
 ): Html => {
   const sides = [current, ...Option.toArray(maybeBaseline)]
   return h.div(
     [h.Class('mt-10 border-t border-hairline')],
     [
-      latencyBlock(sides, h),
+      latencyBlock(sides, maybeCompared, h),
       statusBlock(sides, h),
       failuresBlock(current, maybeBaseline, h),
     ],

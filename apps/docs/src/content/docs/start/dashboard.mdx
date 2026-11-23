@@ -80,9 +80,14 @@ Compare section lets you pick any two.
 The baseline is drawn in gray under the current run: its load line, its
 p95 line, and its errors as bars hanging below the axis, mirroring this
 run's errors above it. The endpoint list shows the baseline p95, this
-run's p95 and the change ("15% faster", "same", "50% slower"), largest
-change first, and each curve overlays both runs. An endpoint opens the same
-comparison for that endpoint alone.
+run's p95 and a verdict on the change: "12% slower", "same", "unclear" or
+"too few", with the range the change most likely lies in under it.
+Slowdowns come first, and each curve overlays both runs. A fourth figure
+counts the endpoints by verdict. An endpoint opens the same comparison for
+that endpoint alone, with verdicts for its p50, p95 and p99.
+
+[Comparing runs](/mantix/guides/comparing-runs/) explains the verdicts and
+how they are worked out.
 
 ## Checks
 

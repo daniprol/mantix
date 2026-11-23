@@ -19,7 +19,13 @@ import {
   stagedOf,
   timelineLength,
 } from '../analysis.ts'
-import { compareRows } from '../domain/compare.ts'
+import {
+  comparisonOf,
+  compareRows,
+  endpointComparison,
+  endpointsVerdict,
+  notesOf,
+} from '../domain/compare.ts'
 import {
   type Span,
   effectiveSpan,
@@ -248,6 +254,23 @@ const lostBanner = (feed: Feed, h: HtmlBuilder<Message>): Html =>
       )
     : h.empty
 
+// THE NOTES
+
+/**
+ * Under the figures when comparing: short labels for anything that makes
+ * the two runs less than like for like.
+ */
+const notesView = (
+  notes: ReadonlyArray<string>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  notes.length === 0
+    ? h.empty
+    : h.p(
+        [h.Class('mt-4 text-[12px] text-ink-2'), h.AriaLabel('Notes')],
+        [notes.join(' · ')],
+      )
+
 // THE PAGE
 
 const planDurationOf = (loaded: LoadedRun) => loaded.run.duration
@@ -269,6 +292,10 @@ export const analysisView = (
     Option.all([maybeBaseline, maybeBaselineSeconds]),
     ([baseline, baselineSeconds]) =>
       summarize(baselineSeconds, span, planDurationOf(baseline)),
+  )
+  // The verdicts: every endpoint at once, from the runs' full Seconds.
+  const maybeComparison = Option.map(maybeBaseline, baseline =>
+    comparisonOf(current.seconds, baseline.seconds, span),
   )
   const checks = checksFor(current.run, maybeEndpoint)
   const isEndpoint = Option.isSome(maybeEndpoint)
@@ -303,12 +330,21 @@ export const analysisView = (
             h,
           ),
         onSome: baselineSummary =>
-          comparedListView(
-            { current: summary.total, baseline: baselineSummary.total },
-            compareRows(summary.endpoints, baselineSummary.endpoints),
-            listContext,
-            h,
-          ),
+          Option.match(maybeComparison, {
+            onNone: () => h.empty,
+            onSome: comparison =>
+              comparedListView(
+                comparison,
+                { current: summary.total, baseline: baselineSummary.total },
+                compareRows(
+                  summary.endpoints,
+                  baselineSummary.endpoints,
+                  comparison,
+                ),
+                listContext,
+                h,
+              ),
+          }),
       }),
     onSome: () =>
       endpointDetailView(
@@ -325,8 +361,20 @@ export const analysisView = (
             seconds: spanSeconds(baselineSeconds, span),
           }),
         ),
+        Option.flatMap(maybeComparison, comparison =>
+          Option.map(endpointComparison(comparison, maybeEndpoint), row => ({
+            row,
+            band: comparison.band,
+          })),
+        ),
         h,
       ),
+  })
+
+  const notes = Option.match(Option.all([maybeBaseline, maybeComparison]), {
+    onNone: () => h.empty,
+    onSome: ([baseline, comparison]) =>
+      notesView(notesOf(baseline.run, current.run, comparison), h),
   })
 
   return h.div(
@@ -347,6 +395,10 @@ export const analysisView = (
                     figuresOf(summary.total),
                     Option.map(maybeBaselineSummary, s => figuresOf(s.total)),
                     checks,
+                    // On a whole comparison, how the endpoints came out.
+                    isEndpoint
+                      ? Option.none()
+                      : Option.map(maybeComparison, endpointsVerdict),
                     h,
                   ),
                   Option.isSome(maybeBaseline) || isLive
@@ -357,6 +409,7 @@ export const analysisView = (
               spanControl(span, isLive, h),
             ],
           ),
+          notes,
           timelineView(
             {
               topTrack: isEndpoint ? 'Throughput' : 'Load',

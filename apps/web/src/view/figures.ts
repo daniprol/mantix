@@ -1,13 +1,15 @@
 /**
  * The three headline figures: throughput, p95 latency and errors, for the
  * span the page shows. Each turns red only when it breaks one of the run's
- * checks. When comparing, the note under each one is the baseline's value.
+ * checks. When comparing, the note under each one is the baseline's value,
+ * and a fourth figure counts the endpoints by verdict.
  */
 import { Array, Option, pipe } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
 import type { ThresholdResult } from '@mantix/api'
 
+import type { EndpointsVerdict } from '../domain/compare.ts'
 import * as Format from '../domain/format.ts'
 import { type Figures, hasEnoughForP95 } from '../domain/stats.ts'
 import * as Threshold from '../domain/threshold.ts'
@@ -65,6 +67,7 @@ export const figuresView = (
   figures: Figures,
   maybeBaseline: Option.Option<Figures>,
   checks: ReadonlyArray<ThresholdResult>,
+  maybeVerdict: Option.Option<EndpointsVerdict>,
   h: HtmlBuilder<Message>,
 ): Html =>
   h.div(
@@ -111,6 +114,17 @@ export const figuresView = (
         }),
         breaches(checks, 'errors', figures.errorRate * 100),
         h,
+      ),
+      ...Option.toArray(
+        Option.map(maybeVerdict, verdict =>
+          figure(
+            'Endpoints',
+            h.span([], [verdict.value]),
+            h.span([], [verdict.note]),
+            verdict.isWorse,
+            h,
+          ),
+        ),
       ),
     ],
   )

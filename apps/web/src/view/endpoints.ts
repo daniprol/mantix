@@ -5,19 +5,20 @@
  * its own page.
  *
  * One run: p50, p95, errors. Two runs: baseline p95, this run's p95, and
- * the change.
+ * the verdict on the change, with the range it most likely lies in.
  */
 import { Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
-import type { EndpointStats, Second } from '@mantix/api'
+import type { Compare, EndpointStats, Second } from '@mantix/api'
 
 import { COLUMNS } from '../charts/layout.ts'
-import { type ComparedRow, latencyChange } from '../domain/compare.ts'
+import { type ComparedRow, readP95 } from '../domain/compare.ts'
 import * as Format from '../domain/format.ts'
 import type { Range } from '../domain/span.ts'
 import { hasEnoughForP95, p95Curve } from '../domain/stats.ts'
 import type { Message } from '../message.ts'
+import { changeView } from './change.ts'
 import { curveView } from './curve.ts'
 import { endpointName, missing, quantity } from './parts.ts'
 
@@ -35,9 +36,24 @@ const ALL_REQUESTS = 'All requests'
 
 const rowClass = `grid h-11 items-center border-b border-hairline`
 
-const numbers = (cells: ReadonlyArray<Html>, h: HtmlBuilder<Message>): Html =>
+/** One run: three equal columns. Two runs: the change gets more room. */
+type Columns = 'Even' | 'WideLast'
+
+const numbers = (
+  cells: ReadonlyArray<Html>,
+  columns: Columns,
+  h: HtmlBuilder<Message>,
+): Html =>
   h.div(
-    [h.Class('grid grid-cols-3 gap-x-2 text-right text-[13px]')],
+    [
+      h.Class('grid gap-x-2 text-right text-[13px]'),
+      h.Style({
+        'grid-template-columns':
+          columns === 'Even'
+            ? 'repeat(3, minmax(0, 1fr))'
+            : 'minmax(0, 1fr) minmax(0, 1fr) 92px',
+      }),
+    ],
     [...cells],
   )
 
@@ -65,13 +81,14 @@ const row = (
   name: Html,
   curve: Html,
   cells: ReadonlyArray<Html>,
+  columns: Columns,
   h: HtmlBuilder<Message>,
 ): Html => {
   const children = [
     h.div([h.Class('min-w-0 pr-4')], [name]),
     h.div([]),
     curve,
-    numbers(cells, h),
+    numbers(cells, columns, h),
   ]
   const style = h.Style({ 'grid-template-columns': COLUMNS })
   return Option.match(maybeHref, {
@@ -94,6 +111,7 @@ const row = (
 const header = (
   spanLabel: string,
   titles: ReadonlyArray<string>,
+  columns: Columns,
   h: HtmlBuilder<Message>,
 ): Html =>
   h.div(
@@ -115,6 +133,7 @@ const header = (
         titles.map(title =>
           h.span([h.Class('text-[12px] text-ink-2')], [title]),
         ),
+        columns,
         h,
       ),
     ],
@@ -149,13 +168,14 @@ export const endpointListView = (
   h.section(
     [h.Class('mt-10'), h.AriaLabel('Endpoints')],
     [
-      header(context.spanLabel, ['p50', 'p95', 'errors'], h),
+      header(context.spanLabel, ['p50', 'p95', 'errors'], 'Even', h),
       row(
         ALL_REQUESTS,
         Option.none(),
         h.span([h.Class('text-ink')], [ALL_REQUESTS]),
         curveOf(context, Option.none(), h),
         singleCells(total, h),
+        'Even',
         h,
       ),
       ...rows.map(stats =>
@@ -165,6 +185,7 @@ export const endpointListView = (
           endpointName(stats.endpoint, h),
           curveOf(context, Option.some(stats.endpoint), h),
           singleCells(stats, h),
+          'Even',
           h,
         ),
       ),
@@ -174,6 +195,8 @@ export const endpointListView = (
 const comparedCells = (
   maybeCurrent: Option.Option<EndpointStats>,
   maybeBaseline: Option.Option<EndpointStats>,
+  maybeComparison: Option.Option<Compare.EndpointComparison>,
+  band: number,
   h: HtmlBuilder<Message>,
 ): ReadonlyArray<Html> => {
   const p95 = (maybeStats: Option.Option<EndpointStats>) =>
@@ -184,24 +207,15 @@ const comparedCells = (
   return [
     h.span([h.Class('text-ink-2')], [p95(maybeBaseline)]),
     p95(maybeCurrent),
-    Option.match(Option.all([maybeBaseline, maybeCurrent]), {
+    Option.match(maybeComparison, {
       onNone: () => missing('–', h),
-      onSome: ([baseline, current]) => {
-        const change = latencyChange(baseline.latency.p95, current.latency.p95)
-        return h.span(
-          [
-            h.Class(
-              `whitespace-nowrap ${change === 'same' ? 'text-ink-2' : change.endsWith('slower') ? 'text-danger' : 'text-ink'}`,
-            ),
-          ],
-          [change],
-        )
-      },
+      onSome: compared => changeView(readP95(compared, band), h),
     }),
   ]
 }
 
 export const comparedListView = (
+  comparison: Compare.Comparison,
   totals: Readonly<{ current: EndpointStats; baseline: EndpointStats }>,
   rows: ReadonlyArray<ComparedRow>,
   context: ListContext,
@@ -210,7 +224,12 @@ export const comparedListView = (
   h.section(
     [h.Class('mt-10'), h.AriaLabel('Endpoints')],
     [
-      header(context.spanLabel, ['baseline', 'this run', 'change'], h),
+      header(
+        context.spanLabel,
+        ['baseline', 'this run', 'change'],
+        'WideLast',
+        h,
+      ),
       row(
         ALL_REQUESTS,
         Option.none(),
@@ -219,8 +238,11 @@ export const comparedListView = (
         comparedCells(
           Option.some(totals.current),
           Option.some(totals.baseline),
+          Option.some(comparison.total),
+          comparison.band,
           h,
         ),
+        'WideLast',
         h,
       ),
       ...rows.map(compared =>
@@ -229,7 +251,14 @@ export const comparedListView = (
           Option.some(context.hrefOf(compared.endpoint)),
           endpointName(compared.endpoint, h),
           curveOf(context, Option.some(compared.endpoint), h),
-          comparedCells(compared.maybeCurrent, compared.maybeBaseline, h),
+          comparedCells(
+            compared.maybeCurrent,
+            compared.maybeBaseline,
+            compared.maybeComparison,
+            comparison.band,
+            h,
+          ),
+          'WideLast',
           h,
         ),
       ),

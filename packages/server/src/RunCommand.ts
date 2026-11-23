@@ -13,7 +13,7 @@ import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { type RunOverrides, summarizeRun } from '@mantix/api'
+import { type RunContext, type RunOverrides, summarizeRun } from '@mantix/api'
 import {
   type RunHandle,
   type RunResult,
@@ -112,8 +112,8 @@ const parseOverrides = (flags: {
       }),
   })
 
-/** Print the summary, write the JSON file, and decide the exit code. */
-const finish = Effect.fn('finish')(function* (
+/** Print the summary and write the JSON file. */
+const report = Effect.fn('report')(function* (
   result: RunResult,
   jsonPath: Option.Option<string>,
 ) {
@@ -131,12 +131,104 @@ const finish = Effect.fn('finish')(function* (
     })
     yield* Console.log(`  Summary written to ${path}\n`)
   }
-  if (result.info.status === 'crashed') {
-    return yield* new CliExit({ code: 1, message: result.info.error ?? '' })
+})
+
+/** The exit code: 1 if a run crashed, 99 if a threshold failed. */
+const exitFor = (results: ReadonlyArray<RunResult>) => {
+  const crashed = results.find(result => result.info.status === 'crashed')
+  if (crashed !== undefined) {
+    return Effect.fail(
+      new CliExit({ code: 1, message: crashed.info.error ?? '' }),
+    )
   }
-  if (!passed(result.info)) {
-    return yield* new CliExit({ code: 99, message: 'thresholds failed' })
+  if (!results.every(result => passed(result.info))) {
+    return Effect.fail(new CliExit({ code: 99, message: 'thresholds failed' }))
   }
+  return Effect.void
+}
+
+/** `--repeat`: at least 1, and not with --json (one summary per file). */
+const parseRepeat = (repeat: number, json: Option.Option<string>) => {
+  if (!Number.isInteger(repeat) || repeat < 1) {
+    return Effect.fail(
+      new CliExit({ code: 1, message: '--repeat must be 1 or more.' }),
+    )
+  }
+  if (repeat > 1 && Option.isSome(json)) {
+    return Effect.fail(
+      new CliExit({
+        code: 1,
+        message:
+          'Use --json with a single run. To compare repeated runs, use mantix compare --json.',
+      }),
+    )
+  }
+  return Effect.succeed(repeat)
+}
+
+interface RunArgs {
+  readonly file: string
+  readonly quiet: boolean
+  readonly json: Option.Option<string>
+  readonly label: Option.Option<string>
+}
+
+/** One run, start to end, with its live lines. */
+const runOnce = Effect.fn('runOnce')(function* (
+  test: TestDefinition,
+  args: RunArgs,
+  overrides: RunOverrides,
+  repeat: RunContext['repeat'],
+) {
+  // Remember the handle so a Ctrl-C can still print the summary.
+  let handle: RunHandle | undefined
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      // startRecordedRun also saves the run to the history, so it can
+      // be opened in `mantix ui` and compared later.
+      handle = yield* startRecordedRun(test, {
+        file: args.file,
+        overrides,
+        label: Option.getOrUndefined(args.label),
+        repeat,
+      }).pipe(
+        Effect.mapError(e => new CliExit({ code: 1, message: e.message })),
+      )
+      const info = yield* handle.info
+      const models = new Set(info.plan.map(s => s.plan.model))
+      const model = models.size === 1 ? [...models][0]! : 'mixed'
+      // e.g. "mantix · checkout · 30 s planned · main @ a1b2c3d · run 2 of 5"
+      const header = [
+        'mantix',
+        info.testName,
+        `${info.duration} s planned`,
+        contextLine(info.context),
+        repeat === undefined ? '' : `run ${repeat.index} of ${repeat.of}`,
+      ].filter(part => part !== '')
+      yield* Console.log(`\n  ${header.join(' · ')}${args.quiet ? '' : '\n'}`)
+      if (!args.quiet) {
+        // `events` replays and then follows the run, ending with it.
+        yield* handle.events.pipe(
+          Stream.runForEach(event =>
+            event._tag === 'Second'
+              ? Console.log(secondLine(event.second, model))
+              : Effect.void,
+          ),
+        )
+      }
+      return yield* handle.await
+    }),
+  ).pipe(
+    // Ctrl-C interrupts us. By the time this runs, the run's scope has
+    // closed: teardown has run and the status says "stopped".
+    Effect.onInterrupt(() =>
+      handle === undefined
+        ? Effect.void
+        : Effect.flatMap(handle.snapshot, snapshot =>
+            Effect.ignore(report(snapshot, args.json)),
+          ),
+    ),
+  )
 })
 
 const run = Command.make(
@@ -170,6 +262,12 @@ const run = Command.make(
       Flag.withDescription('Only print the final summary'),
       Flag.withDefault(false),
     ),
+    repeat: Flag.Int('repeat').pipe(
+      Flag.withDescription(
+        'Run the test this many times, one after another, saved as one group for mantix compare',
+      ),
+      Flag.withDefault(1),
+    ),
     label: labelFlag,
     baseUrl: baseUrlFlag,
     ...historyFlags,
@@ -178,58 +276,30 @@ const run = Command.make(
     const program = Effect.gen(function* () {
       const overrides = yield* parseOverrides(args)
       const baseUrl = yield* parseBaseUrl(args.baseUrl)
+      const repeat = yield* parseRepeat(args.repeat, args.json)
       const test = yield* loadTest(args.file, undefined, baseUrl)
-
-      // Remember the handle so a Ctrl-C can still print the summary.
-      let handle: RunHandle | undefined
-      const result = yield* Effect.scoped(
-        Effect.gen(function* () {
-          // startRecordedRun also saves the run to the history, so it can
-          // be opened in `mantix ui` and compared later.
-          handle = yield* startRecordedRun(test, {
-            file: args.file,
-            overrides,
-            label: Option.getOrUndefined(args.label),
-          }).pipe(
-            Effect.mapError(e => new CliExit({ code: 1, message: e.message })),
-          )
-          const info = yield* handle.info
-          const models = new Set(info.plan.map(s => s.plan.model))
-          const model = models.size === 1 ? [...models][0]! : 'mixed'
-          // e.g. "mantix · checkout · 30 s planned · main @ a1b2c3d"
-          const header = [
-            'mantix',
-            info.testName,
-            `${info.duration} s planned`,
-            contextLine(info.context),
-          ].filter(part => part !== '')
-          yield* Console.log(
-            `\n  ${header.join(' · ')}${args.quiet ? '' : '\n'}`,
-          )
-          if (!args.quiet) {
-            // `events` replays and then follows the run, ending with it.
-            yield* handle.events.pipe(
-              Stream.runForEach(event =>
-                event._tag === 'Second'
-                  ? Console.log(secondLine(event.second, model))
-                  : Effect.void,
-              ),
-            )
-          }
-          return yield* handle.await
-        }),
-      ).pipe(
-        // Ctrl-C interrupts us. By the time this runs, the run's scope has
-        // closed: teardown has run and the status says "stopped".
-        Effect.onInterrupt(() =>
-          handle === undefined
-            ? Effect.void
-            : Effect.flatMap(handle.snapshot, snapshot =>
-                Effect.ignore(finish(snapshot, args.json)),
-              ),
-        ),
-      )
-      yield* finish(result, args.json)
+      // The runs of one --repeat share a group, so `mantix compare` can
+      // treat them as one side.
+      const group = crypto.randomUUID().slice(0, 8)
+      const results: Array<RunResult> = []
+      for (let index = 1; index <= repeat; index++) {
+        const result = yield* runOnce(
+          test,
+          args,
+          overrides,
+          repeat === 1 ? undefined : { group, index, of: repeat },
+        )
+        yield* report(result, args.json)
+        results.push(result)
+        // A crash will crash again: stop repeating.
+        if (result.info.status === 'crashed') break
+      }
+      if (results.length > 1) {
+        yield* Console.log(
+          `  Saved ${results.length} runs as one group: mantix compare takes them as one side.\n`,
+        )
+      }
+      yield* exitFor(results)
     }).pipe(
       Effect.provide(
         RunStore.forCli({ enabled: args.history, file: args.historyFile }),

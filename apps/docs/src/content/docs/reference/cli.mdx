@@ -19,7 +19,7 @@ Runs a test file headless, prints progress and a summary, checks thresholds,
 and exits with a code your CI can act on.
 
 ```sh
-mantix run <file> [--rate N] [--vus N] [--duration 30s] [--base-url URL] [--json out.json] [--quiet] [--label "text"] [--no-history]
+mantix run <file> [--rate N] [--vus N] [--duration 30s] [--repeat N] [--base-url URL] [--json out.json] [--quiet] [--label "text"] [--no-history]
 ```
 
 | Flag              | What it does                                                                                                                                                      |
@@ -28,6 +28,7 @@ mantix run <file> [--rate N] [--vus N] [--duration 30s] [--base-url URL] [--json
 | `--rate N`        | Replace every scenario's load with a constant rate of `N` iterations per second (open model). A `maxVus` from the file is kept.                                   |
 | `--vus N`         | Replace every scenario's load with `N` constant virtual users (closed model).                                                                                     |
 | `--duration 30s`  | How long to run. With `--rate` or `--vus`, the length of that constant load. On its own, the file's stages are stretched or squeezed to fit, keeping their shape. |
+| `--repeat N`      | Run the test `N` times, one after the other, saved as one group that [`mantix compare`](#mantix-compare) treats as one side. Not with `--json`.                   |
 | `--json out.json` | Also write the full summary as JSON to this file.                                                                                                                 |
 | `--quiet`         | Don't print the per-second lines; print only the final summary.                                                                                                   |
 | `--base-url URL`  | Send requests to this address instead of each scenario's `baseUrl`, e.g. a staging server. The test file is not changed.                                          |
@@ -107,6 +108,31 @@ to it. Latencies are `p50`, `p90`, `p95`, `p99` and `max`, in
 milliseconds. The
 format is pre-release and may change; the `version` field will tell you when
 it does.
+
+## mantix compare
+
+Compares a run with a baseline from the run history and says, for every
+endpoint, whether it got slower, faster, stayed the same, or whether the
+difference is too noisy to tell. [Comparing runs](/mantix/guides/comparing-runs/)
+explains the verdicts.
+
+```sh
+mantix compare [run] [--baseline run] [--baseline-runs N] [--band 5] [--fail-on-regression p95:+10%] [--json out.json]
+```
+
+| Flag                       | What it does                                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[run]`                    | The run to judge. Default: the newest run. A run id (or its start), `label:<text>`, `branch:<name>` or `commit:<sha>`, which take the newest match.     |
+| `--baseline run`           | What to compare against, picked the same way, always a run of the same test. Default: the run before.                                                   |
+| `--baseline-runs N`        | Use the `N` newest matching runs as the baseline, e.g. `--baseline branch:main --baseline-runs 5`.                                                      |
+| `--band 5`                 | Latency changes smaller than this percent count as the same. Default 5.                                                                                 |
+| `--fail-on-regression ...` | Exit with code 99 when an endpoint is confidently worse than a limit: `p50`, `p95` or `p99` in percent, `errors` in percentage points, comma separated. |
+| `--json out.json`          | Also write the comparison as JSON: the run ids of each side, warnings, every metric of every endpoint with its range and verdict, and the regressions.  |
+| `--history-file`           | Where the run history lives. Default `.mantix/history.db`.                                                                                              |
+
+A run from a `--repeat` brings its whole group with it, on either side.
+The exit code is `0` when nothing broke a limit, `99` when something did,
+and `1` for an error, such as no run matching a selector.
 
 ## mantix ui
 

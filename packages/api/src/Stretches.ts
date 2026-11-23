@@ -34,6 +34,15 @@ export const generatorIssues = (
   return issues
 }
 
+/**
+ * Why a second should not be trusted; empty when it can be. Seconds
+ * recorded before Mantix measured its own health fall back to the
+ * event-loop delay alone.
+ */
+export const issuesOf = (second: Second): ReadonlyArray<GeneratorIssue> =>
+  second.generator?.issues ??
+  (second.loopLagMs > GENERATOR_LIMITS.loopLagMs ? ['LoopLag'] : [])
+
 /** A run of consecutive seconds, `from` inclusive, `to` exclusive. */
 export interface Stretch {
   readonly from: number
@@ -45,11 +54,7 @@ export interface UntrustedStretch extends Stretch {
   readonly issues: ReadonlyArray<GeneratorIssue>
 }
 
-/**
- * Join consecutive untrusted seconds into stretches, for the hatching.
- * Seconds recorded before Mantix measured its own health fall back to the
- * event-loop delay alone.
- */
+/** Join consecutive untrusted seconds into stretches, for the hatching. */
 export const untrustedStretches = (
   seconds: ReadonlyArray<Second>,
 ): Array<UntrustedStretch> => {
@@ -59,11 +64,7 @@ export const untrustedStretches = (
     issues: Set<GeneratorIssue>
   }> = []
   for (const second of seconds) {
-    const issues =
-      second.generator?.issues ??
-      (second.loopLagMs > GENERATOR_LIMITS.loopLagMs
-        ? ['LoopLag' as const]
-        : [])
+    const issues = issuesOf(second)
     if (issues.length === 0) continue
     const last = stretches.at(-1)
     if (last !== undefined && last.to === second.t) {

@@ -1,0 +1,136 @@
+---
+title: Comparing runs
+description: Find out whether a change made your service slower, or whether the difference is just noise.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+Run the same test twice against the same code and the numbers come out
+different. So the question is never "did the p95 change?" (it always does)
+but "did it change by more than the normal wobble?" Mantix answers that for
+every endpoint, with one of four verdicts:
+
+| Verdict                    | What it means                                                                           |
+| -------------------------- | --------------------------------------------------------------------------------------- |
+| **12% slower** (or faster) | A real change, bigger than 5%. Under it, the range it most likely lies in.              |
+| **same**                   | Confidently no change that matters: whatever moved is smaller than 5%.                  |
+| **unclear**                | Too noisy to say. The range shows how far it could go either way.                       |
+| **too few**                | Too few requests to judge this percentile. A p95 needs 1,000 on each side, a p99 5,000. |
+
+"Same" and "unclear" are different answers. "Same" means you can stop
+worrying. "Unclear" means run longer, or [repeat the runs](#repeated-runs).
+
+## In the dashboard
+
+Open **Compare** on a finished run, or pick any two in the Compare section.
+Each endpoint's row shows the baseline p95, this run's p95 and the verdict,
+with the range under it in gray. Slowdowns are listed first. Hover a
+verdict to read why. A fourth figure next to throughput, p95 and errors
+counts the endpoints: "1 slower, 3 same".
+
+The verdicts follow the span: drag a stretch on the timeline and they are
+worked out again for that stretch alone, in both runs.
+
+## In the terminal
+
+```sh
+mantix compare                  # the newest run against the one before it
+mantix compare 5e6f7a8b --baseline 1a2b3c4d
+mantix compare label:after --baseline label:before
+mantix compare --baseline branch:main --baseline-runs 5
+```
+
+A run is picked by its id (the start of it is enough), or by
+`label:<text>`, `branch:<name>` or `commit:<sha>`, which take the newest
+match. The baseline is always a run of the same test.
+
+```txt frame="terminal"
+  baseline  956723b3 · 23 Nov, 17:38 · main @ 9ba006c · base
+  this run  f5cbd967 · 23 Nov, 17:39 · main @ 9ba006c · slow
+
+  p95                  baseline   this run   change
+  All requests           136 ms     134 ms   unclear      −10 to +8%
+  GET /cart/:id         38.7 ms    38.7 ms   same         −1 to +1%
+  GET /products/:sku    19.6 ms    26.0 ms   33% slower   +30 to +33%
+  POST /cart/items      58.1 ms    58.1 ms   same         −1 to +1%
+  POST /checkout         222 ms     387 ms   unclear      −85 to +585%
+```
+
+Here the demo target's product page was made 6 ms slower on purpose
+(`EXTRA_PRODUCT_MS=6`), and that is the one endpoint called slower.
+`POST /checkout` stalls for 1.5 s twice a minute in both runs, so its p95
+jumps around: "unclear", where a plain percentage would have said "74%
+slower". It prints the same table for p50, for p99 when there are enough
+requests, and for errors (in percentage points: `+0.14 pts`). The dashboard and the
+terminal use the same code, so they always agree.
+
+## In CI
+
+`--fail-on-regression` turns the comparison into a gate. It exits with code
+99 when an endpoint, or all requests together, is confidently worse than
+the limit:
+
+```sh
+mantix compare --baseline label:main --fail-on-regression p95:+10%,errors:+0.5%
+```
+
+Only a confident slowdown fails the build. "Unclear" never does: a noisy CI
+machine should not block a pull request.
+
+<Aside type="tip" title="Run both sides on the same machine">
+  A baseline from a different machine, or from last week, mostly measures the
+  difference between machines. In CI, run the base branch and your branch one
+  after the other in the same job, then compare the two.
+</Aside>
+
+```yaml
+- run: git checkout origin/main && npx mantix run checkout.ts --repeat 3 --label main --quiet
+- run: git checkout - && npx mantix run checkout.ts --repeat 3 --label pr --quiet
+- run: npx mantix compare label:pr --baseline label:main --fail-on-regression p95:+10% --json compare.json
+```
+
+`--json` writes the whole comparison, every metric with its range and
+verdict, for your own tooling.
+
+## Repeated runs
+
+One run against one run can only tell whether a difference is bigger than
+the wobble _inside_ a run. Runs also differ from each other: a warmer
+machine, a colder cache, another process busy. `--repeat` measures that
+too:
+
+```sh
+mantix run checkout.ts --repeat 5
+```
+
+It runs the test five times, one after the other, and saves the runs as
+one group. `mantix compare` treats a group as one side, so the ranges
+cover the wobble between runs as well. The baseline side can come from the
+history instead: `--baseline branch:main --baseline-runs 5` takes the five
+newest runs on `main`.
+
+## How it works
+
+Requests come in clumps: one garbage-collection pause or one slow query
+hits many of them at once. A textbook test that treats every request as
+independent calls almost any difference "significant". So Mantix uses a
+**block bootstrap** over the per-second histograms it saves for every run:
+
+1. Cut each run into blocks of about 5 seconds.
+2. Build a pretend run by picking blocks at random, some twice and some not
+   at all, and measure the change between the two sides.
+3. Do that 1,000 times. The middle 95% of those changes is the range.
+
+Picking whole blocks keeps a spike in one piece, which is what keeps the
+range honest. When both runs follow the same load plan, each round picks
+the same positions in both, so ramp-up is compared with ramp-up. A verdict
+of slower or faster needs the whole range on one side of zero; "same" needs
+the range inside ±5% (the standard equivalence test). Each is wrong at most
+about 5% of the time. Seconds where Mantix itself could not keep up are
+left out of both runs.
+
+Change the band with `--band`: `--band 10` counts changes under 10% as the
+same.
+
+The comparison also warns when runs are not like for like: different load
+plans, load changed live during a run, or different machines.
