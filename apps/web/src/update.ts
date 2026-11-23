@@ -58,9 +58,10 @@ import {
 import {
   AppRoute,
   compareRouter,
+  href,
+  routeFromUrl,
   runIdsOf,
   runRouter,
-  urlToAppRoute,
 } from './route.ts'
 
 type UpdateReturn = Update.Return<Model, Message>
@@ -86,7 +87,7 @@ const upsertSecond = (
 }
 
 /** A run with its Seconds so far. A live one follows its stream. */
-const loaded = (run: RunInfo, seconds: ReadonlyArray<Second>): RunData =>
+export const loaded = (run: RunInfo, seconds: ReadonlyArray<Second>): RunData =>
   RunData.Loaded({
     run,
     seconds,
@@ -275,7 +276,7 @@ const step = (model: Model, message: Message): UpdateReturn =>
         }),
       }),
 
-    ChangedUrl: ({ url }) => changeRoute(model, urlToAppRoute(url)),
+    ChangedUrl: ({ url }) => changeRoute(model, routeFromUrl(model.mode, url)),
 
     CompletedNavigate: () => ({ model }),
 
@@ -582,7 +583,9 @@ const step = (model: Model, message: Message): UpdateReturn =>
         onSome: ([runId, baselineId]) => ({
           model,
           commands: [
-            NavigateInternal({ url: compareRouter({ runId, baselineId }) }),
+            NavigateInternal({
+              url: href(model.mode, compareRouter({ runId, baselineId })),
+            }),
           ],
         }),
       }),

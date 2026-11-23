@@ -48,5 +48,17 @@ The Mantix dashboard. It talks to the Mantix server through the shared
   line, the flags and the pause wash all come from the run's journal
   through `steer`/`plannedPath` in `@mantix/api`, so the dashboard and the
   engine always agree. `domain/steer.ts` reads the form and the journal.
-- Tests: `story.test.ts` (update), `scene.test.ts` (view) and
-  `e2e/dashboard.spec.ts` (a real browser against `mantix ui`).
+- Reports (`mantix report`): the same app in one HTML file. `vite build
+  --mode report` writes `dist/report.html` with JS, CSS and Latin fonts
+  inlined and an empty slot; the CLI fills the slot with the runs
+  (`Report` in `@mantix/api`, gzipped JSON in base64). `entry.ts` reads it
+  (`report.ts`) into the Flags, and init then has every run: no Commands,
+  no server. `model.mode` is `Report`: pages live after the "#" (`href`
+  and `routeFromUrl` in `route.ts`, since a file:// page can't change its
+  path), the sidebar has no sections, and the run bar has no actions. A
+  Summary report blanks error messages; only Dashboard and Full show the
+  error examples on an endpoint page.
+- Tests: `story.test.ts` (update), `scene.test.ts` (view),
+  `report.test.ts` (report mode), and in `e2e/` a real browser against
+  `mantix ui` (`dashboard.spec.ts`) and a report opened from disk
+  (`report.spec.ts`).

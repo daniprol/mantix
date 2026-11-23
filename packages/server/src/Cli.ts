@@ -2,6 +2,7 @@
 import { Command } from 'effect/cli'
 
 import { dev } from './DevCommand.ts'
+import { report } from './ReportCommand.ts'
 import { run } from './RunCommand.ts'
 import { ui } from './UiCommand.ts'
 
@@ -9,5 +10,5 @@ export const mantix = Command.make('mantix').pipe(
   Command.withDescription(
     'Load tests that tell the truth, written in TypeScript',
   ),
-  Command.withSubcommands([run, ui, dev]),
+  Command.withSubcommands([run, ui, dev, report]),
 )

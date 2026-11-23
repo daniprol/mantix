@@ -13,7 +13,7 @@ import { defineTaggedUnion } from 'foldkit/schema'
 import { RunInfo, Second, TestInfo } from '@mantix/api'
 
 import { Span } from './domain/span.ts'
-import { AppRoute } from './route.ts'
+import { AppRoute, Mode } from './route.ts'
 import { Theme } from './theme.ts'
 
 /** Talking to the Mantix server to learn which test is loaded. */
@@ -96,6 +96,8 @@ const ComparePick = Schema.Struct({
 type ComparePick = typeof ComparePick.Type
 
 export const Model = Schema.Struct({
+  /** Served by `mantix ui`, or a report file. */
+  mode: Mode,
   route: AppRoute,
   test: TestState,
   history: History,
@@ -117,6 +119,7 @@ export const initialModel = (
   route: AppRoute,
   theme: Theme = 'System',
 ): Model => ({
+  mode: Mode.Dashboard(),
   route,
   test: TestState.Connecting(),
   history: History.Loading(),

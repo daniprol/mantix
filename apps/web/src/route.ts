@@ -13,8 +13,11 @@
  * Foldkit idea: a router is a "biparser". The same definition parses a URL
  * into a Route and prints a Route back into a URL, so links can never point
  * at a path the parser does not understand.
+ *
+ * A shareable report (`mantix report`) is the same app in one HTML file.
+ * There the pages live after the "#", see `Mode` at the end.
  */
-import { Effect, Schema, pipe } from 'effect'
+import { Effect, Option, Schema, pipe } from 'effect'
 import { Route } from 'foldkit'
 import {
   ParseError,
@@ -24,6 +27,11 @@ import {
   slash,
   string,
 } from 'foldkit/route'
+import { defineTaggedUnion } from 'foldkit/schema'
+import { modifyFields } from 'foldkit/struct'
+import type { Url } from 'foldkit/url'
+
+import { ReportDetail } from '@mantix/api'
 
 export const AppRoute = defineRouteUnion({
   NewRun: {},
@@ -110,10 +118,7 @@ const routeParser = Route.oneOf(
   newRunRouter,
 )
 
-export const urlToAppRoute = Route.parseUrlWithFallback(
-  routeParser,
-  AppRoute.NotFound,
-)
+const urlToAppRoute = Route.parseUrlWithFallback(routeParser, AppRoute.NotFound)
 
 /** The runs a route shows: the run first, then the baseline it is compared with. */
 export const runIdsOf = (route: AppRoute): ReadonlyArray<string> =>
@@ -126,4 +131,50 @@ export const runIdsOf = (route: AppRoute): ReadonlyArray<string> =>
     Compare: ({ runId, baselineId }) => [runId, baselineId],
     CompareEndpoint: ({ runId, baselineId }) => [runId, baselineId],
     NotFound: () => [],
+  })
+
+// REPORTS
+
+/**
+ * How this copy of the app is addressed.
+ *
+ * - Dashboard: served by `mantix ui`, every page has a real path.
+ * - Report: one HTML file, often opened straight from disk, where the
+ *   browser won't let the path change. Its pages live after the "#"
+ *   (report.html#/runs/abc), and only the runs inside the file exist.
+ */
+export const Mode = defineTaggedUnion({
+  Dashboard: {},
+  Report: {
+    /** The runs in the file; the first is the one it opens on. */
+    runIds: Schema.NonEmptyArray(Schema.String),
+    detail: ReportDetail,
+  },
+})
+export type Mode = typeof Mode.Type
+
+/** A link to a page, written the way this copy of the app is addressed. */
+export const href = (mode: Mode, path: string): string =>
+  mode._tag === 'Report' ? `#${path}` : path
+
+/**
+ * The page a URL shows. In a report, a page about runs the file doesn't
+ * hold (or a page that needs the server, like New run) opens the report's
+ * own run instead.
+ */
+export const routeFromUrl = (mode: Mode, url: Url): AppRoute =>
+  Mode.match(mode, {
+    Dashboard: () => urlToAppRoute(url),
+    Report: ({ runIds }) => {
+      const route = urlToAppRoute(
+        modifyFields(url, {
+          pathname: () => Option.getOrElse(url.hash, () => '/'),
+          hash: () => Option.none(),
+        }),
+      )
+      const shown = runIdsOf(route)
+      return shown.length > 0 && shown.every(id => runIds.includes(id))
+        ? route
+        : AppRoute.Run({ runId: runIds[0] })
+    },
   })

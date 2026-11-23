@@ -10,6 +10,7 @@ import {
   type EndpointStats,
   type ErrorGroup,
   type Second,
+  exampleText,
   groupErrors,
 } from '@mantix/api'
 
@@ -162,9 +163,46 @@ const when = (group: ErrorGroup): string =>
     ? Format.clock(group.firstSeen)
     : `${Format.clock(group.firstSeen)} – ${Format.clock(group.lastSeen + 1)}`
 
+/** The latest few examples that say more than the group's description. */
+const examplesOf = (
+  group: ErrorGroup,
+): ReadonlyArray<{ readonly t: number; readonly text: string }> => {
+  const seen = new Set<string>()
+  return group.examples
+    .flatMap(example => {
+      const text = exampleText(group.detail, example)
+      if (text === undefined || seen.has(text)) return []
+      seen.add(text)
+      return [{ t: example.t, text }]
+    })
+    .slice(-3)
+}
+
+const examplesView = (group: ErrorGroup, h: HtmlBuilder<Message>): Html =>
+  Array.match(examplesOf(group), {
+    onEmpty: () => h.empty,
+    onNonEmpty: examples =>
+      h.div(
+        [h.Class('flex min-w-0 flex-col gap-0.5 pt-1 text-[12px]')],
+        examples.map(({ t, text }) =>
+          h.div(
+            [h.Class('flex min-w-0 items-baseline gap-4')],
+            [
+              h.span([h.Class('num shrink-0 text-ink-3')], [Format.clock(t)]),
+              h.span(
+                [h.Class('num truncate text-ink-2'), h.Title(text)],
+                [text],
+              ),
+            ],
+          ),
+        ),
+      ),
+  })
+
 const failureRow = (
   group: ErrorGroup,
   counts: ReadonlyArray<Html>,
+  showExamples: boolean,
   h: HtmlBuilder<Message>,
 ): Html =>
   h.keyed('li')(
@@ -183,6 +221,7 @@ const failureRow = (
         ],
       ),
       h.div([h.Class('flex gap-6 text-right')], [...counts]),
+      showExamples ? examplesView(group, h) : h.empty,
     ],
   )
 
@@ -199,6 +238,7 @@ const countCell = (
 const failuresBlock = (
   current: Side,
   maybeBaseline: Option.Option<Side>,
+  showExamples: boolean,
   h: HtmlBuilder<Message>,
 ): Html => {
   const groups = groupErrors(current.seconds)
@@ -243,7 +283,9 @@ const failuresBlock = (
                     ],
                   )
                 : h.empty,
-              ...list.map(group => failureRow(group, counts(group), h)),
+              ...list.map(group =>
+                failureRow(group, counts(group), showExamples, h),
+              ),
             ],
           ),
       }),
@@ -252,9 +294,14 @@ const failuresBlock = (
   )
 }
 
+/**
+ * `showExamples`: the error messages and values as they arrived. A Summary
+ * report leaves them out (see ReportDetail in @mantix/api).
+ */
 export const endpointDetailView = (
   current: Side,
   maybeBaseline: Option.Option<Side>,
+  showExamples: boolean,
   h: HtmlBuilder<Message>,
 ): Html => {
   const sides = [current, ...Option.toArray(maybeBaseline)]
@@ -263,7 +310,7 @@ export const endpointDetailView = (
     [
       latencyBlock(sides, h),
       statusBlock(sides, h),
-      failuresBlock(current, maybeBaseline, h),
+      failuresBlock(current, maybeBaseline, showExamples, h),
     ],
   )
 }

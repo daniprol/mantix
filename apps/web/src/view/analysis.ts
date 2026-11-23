@@ -31,8 +31,10 @@ import { isPaused, plannedEnd } from '../domain/steer.ts'
 import { Message } from '../message.ts'
 import type { Feed, LoadedRun, Model } from '../model.ts'
 import {
+  type Mode,
   compareEndpointRouter,
   compareRouter,
+  href,
   runEndpointRouter,
   runRouter,
 } from '../route.ts'
@@ -78,16 +80,20 @@ const separator = (h: HtmlBuilder<Message>): Html =>
 
 /** Where the page is: the test, the run(s), and the endpoint if any. */
 const whereView = (
+  mode: Mode,
   analysis: Analysis,
   h: HtmlBuilder<Message>,
 ): ReadonlyArray<Html> => {
   const { current, maybeBaseline, maybeEndpoint } = analysis
   const run = current.run
-  const parentHref = Option.match(maybeBaseline, {
-    onNone: () => runRouter({ runId: run.id }),
-    onSome: baseline =>
-      compareRouter({ runId: run.id, baselineId: baseline.run.id }),
-  })
+  const parentHref = href(
+    mode,
+    Option.match(maybeBaseline, {
+      onNone: () => runRouter({ runId: run.id }),
+      onSome: baseline =>
+        compareRouter({ runId: run.id, baselineId: baseline.run.id }),
+    }),
+  )
   // In a breadcrumb the endpoint needs the room: runs get the short form.
   const isShort = Option.isSome(maybeEndpoint)
   const runs: ReadonlyArray<Html> = Option.match(maybeBaseline, {
@@ -141,6 +147,10 @@ const actionsView = (
 ): ReadonlyArray<Html> => {
   const { current, maybeBaseline } = analysis
   const run = current.run
+  // A report can't start, steer or pick runs: it shows what happened.
+  if (model.mode._tag === 'Report') {
+    return [runStatus(run, current.seconds.length, h)]
+  }
   if (Option.isSome(maybeBaseline)) {
     return [buttonLink('Change runs', '/compare', 'Secondary', h)]
   }
@@ -281,15 +291,18 @@ export const analysisView = (
     maybeRange: span._tag === 'Range' ? Option.some(span) : Option.none(),
     spanLabel: spanLabel(span),
     hrefOf: (endpoint: string) =>
-      Option.match(maybeBaseline, {
-        onNone: () => runEndpointRouter({ runId: current.run.id, endpoint }),
-        onSome: baseline =>
-          compareEndpointRouter({
-            runId: current.run.id,
-            baselineId: baseline.run.id,
-            endpoint,
-          }),
-      }),
+      href(
+        model.mode,
+        Option.match(maybeBaseline, {
+          onNone: () => runEndpointRouter({ runId: current.run.id, endpoint }),
+          onSome: baseline =>
+            compareEndpointRouter({
+              runId: current.run.id,
+              baselineId: baseline.run.id,
+              endpoint,
+            }),
+        }),
+      ),
   }
 
   const below = Option.match(maybeEndpoint, {
@@ -325,6 +338,7 @@ export const analysisView = (
             seconds: spanSeconds(baselineSeconds, span),
           }),
         ),
+        model.mode._tag === 'Dashboard' || model.mode.detail === 'Full',
         h,
       ),
   })
@@ -332,7 +346,11 @@ export const analysisView = (
   return h.div(
     [],
     [
-      barView(whereView(analysis, h), actionsView(model, analysis, h), h),
+      barView(
+        whereView(model.mode, analysis, h),
+        actionsView(model, analysis, h),
+        h,
+      ),
       h.div(
         [h.Class('px-8 pb-16')],
         [
