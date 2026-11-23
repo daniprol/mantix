@@ -19,21 +19,23 @@ Runs a test file headless, prints progress and a summary, checks thresholds,
 and exits with a code your CI can act on.
 
 ```sh
-mantix run <file> [--rate N] [--vus N] [--duration 30s] [--base-url URL] [--json out.json] [--quiet] [--label "text"] [--no-history]
+mantix run <file> [--rate N] [--vus N] [--duration 30s] [--base-url URL] [--json out.json] [--report out.html] [--quiet] [--label "text"] [--no-history]
 ```
 
-| Flag              | What it does                                                                                                                                                      |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<file>`          | The test file. Its default export is one scenario or an array of them.                                                                                            |
-| `--rate N`        | Replace every scenario's load with a constant rate of `N` iterations per second (open model). A `maxVus` from the file is kept.                                   |
-| `--vus N`         | Replace every scenario's load with `N` constant virtual users (closed model).                                                                                     |
-| `--duration 30s`  | How long to run. With `--rate` or `--vus`, the length of that constant load. On its own, the file's stages are stretched or squeezed to fit, keeping their shape. |
-| `--json out.json` | Also write the full summary as JSON to this file.                                                                                                                 |
-| `--quiet`         | Don't print the per-second lines; print only the final summary.                                                                                                   |
-| `--base-url URL`  | Send requests to this address instead of each scenario's `baseUrl`, e.g. a staging server. The test file is not changed.                                          |
-| `--label "text"`  | A note saved with the run, e.g. `"v2.3 on staging"`, to tell runs apart in the [run history](#run-context).                                                       |
-| `--no-history`    | Don't save this run to the [run history](#run-history).                                                                                                           |
-| `--history-file`  | Where the run history lives. Default `.mantix/history.db`.                                                                                                        |
+| Flag                | What it does                                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<file>`            | The test file. Its default export is one scenario or an array of them.                                                                                            |
+| `--rate N`          | Replace every scenario's load with a constant rate of `N` iterations per second (open model). A `maxVus` from the file is kept.                                   |
+| `--vus N`           | Replace every scenario's load with `N` constant virtual users (closed model).                                                                                     |
+| `--duration 30s`    | How long to run. With `--rate` or `--vus`, the length of that constant load. On its own, the file's stages are stretched or squeezed to fit, keeping their shape. |
+| `--json out.json`   | Also write the full summary as JSON to this file.                                                                                                                 |
+| `--report out.html` | Also write a [shareable HTML report](#mantix-report) of the run to this file.                                                                                     |
+| `--full`            | With `--report`: also put error messages and response values in the report.                                                                                       |
+| `--quiet`           | Don't print the per-second lines; print only the final summary.                                                                                                   |
+| `--base-url URL`    | Send requests to this address instead of each scenario's `baseUrl`, e.g. a staging server. The test file is not changed.                                          |
+| `--label "text"`    | A note saved with the run, e.g. `"v2.3 on staging"`, to tell runs apart in the [run history](#run-context).                                                       |
+| `--no-history`      | Don't save this run to the [run history](#run-history).                                                                                                           |
+| `--history-file`    | Where the run history lives. Default `.mantix/history.db`.                                                                                                        |
 
 Durations are written like `500ms`, `30s`, `2m`, `1h`, or a plain number of
 seconds. Without `--duration`, `--rate` and `--vus` run for the file's
@@ -84,7 +86,12 @@ honestly](/mantix/concepts/results/)).
 In a CI step, that is all you need:
 
 ```yaml
-- run: npx mantix run checkout.ts --json results.json
+- run: npx mantix run checkout.ts --json results.json --report report.html
+- uses: actions/upload-artifact@v4
+  if: always() # a failed run is when the report matters most
+  with:
+    name: load-test-report
+    path: report.html
 ```
 
 ### JSON summary
@@ -107,6 +114,47 @@ to it. Latencies are `p50`, `p90`, `p95`, `p99` and `max`, in
 milliseconds. The
 format is pre-release and may change; the `version` field will tell you when
 it does.
+
+## mantix report
+
+Writes a shareable HTML report of a saved run: one file with the
+dashboard and the run inside. It opens in any browser straight from disk,
+with no Mantix and no server, so it can be a CI artifact, a PR attachment
+or a file sent in a chat.
+
+```sh
+mantix report [run] [-o out.html] [--full]
+```
+
+| Flag             | What it does                                                                                  |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| `[run]`          | The run's id, as the dashboard shows it. Default: the latest finished run in the run history. |
+| `-o`, `--output` | Where to write the report. Default `.mantix/reports/<test>-<run>.html`.                       |
+| `--full`         | Also put error messages and response values in the report.                                    |
+| `--history-file` | Where the run history lives. Default `.mantix/history.db`.                                    |
+
+`mantix run --report out.html` writes the same report as soon as the run
+ends, even when a threshold fails or the run is stopped.
+
+A report shows the run's page and every endpoint's page, like the
+dashboard, without the parts that need the server (New run, steering, Run
+again). Links work and can be shared: `out.html#/runs/<id>/endpoints/...`
+opens that endpoint.
+
+### What a report holds
+
+Every second of the run, so any range can be selected and every
+percentile is exact. Errors are counted by kind, status code and problem,
+and each problem keeps its description, such as `503 Service Unavailable`
+or `$.items[*].price: Expected number (received string)`. By default the
+messages are blanked the same way (numbers, ids and quoted values
+removed) and response values are left out, so a report can be passed
+around without leaking data from the system under test. With `--full`,
+the endpoint pages also show examples of each error as it arrived, such as
+`received "19.99"`.
+
+A typical report is under 1 MB: about 640 KB for the dashboard, plus about
+25 KB of compressed data per minute of a run with a handful of endpoints.
 
 ## mantix ui
 

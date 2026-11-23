@@ -8,6 +8,7 @@ import { Runtime } from 'foldkit'
 import { Flags, init } from './init.ts'
 import { Message } from './message.ts'
 import { Model } from './model.ts'
+import { embeddedReport } from './report.ts'
 import { subscriptions } from './subscriptions.ts'
 import { savedTheme } from './theme.ts'
 import { update } from './update.ts'
@@ -40,5 +41,5 @@ const application = Runtime.makeApplication({
 })
 
 Runtime.run(application, {
-  flags: Effect.map(savedTheme, theme => ({ theme })),
+  flags: Effect.all({ theme: savedTheme, maybeReport: embeddedReport }),
 })

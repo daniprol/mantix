@@ -22,6 +22,7 @@ import {
 } from '@mantix/core'
 
 import { startRecordedRun } from './History.ts'
+import { fullFlag, reportOf, writeReport } from './HtmlReport.ts'
 import { contextLine, passed, secondLine, summaryReport } from './Report.ts'
 import { labelFlag } from './RunContext.ts'
 import { RunStore, historyFlags } from './RunStore.ts'
@@ -112,10 +113,21 @@ const parseOverrides = (flags: {
       }),
   })
 
-/** Print the summary, write the JSON file, and decide the exit code. */
+/** What `--report` and `--full` asked for. */
+interface ReportRequest {
+  readonly path: Option.Option<string>
+  readonly full: boolean
+}
+
+/**
+ * Print the summary, write the JSON file and the HTML report, and decide
+ * the exit code. The files are written whatever the outcome: a failed run
+ * is when people need them most.
+ */
 const finish = Effect.fn('finish')(function* (
   result: RunResult,
   jsonPath: Option.Option<string>,
+  report: ReportRequest,
 ) {
   const summary = summarizeRun(result.info, result.seconds)
   yield* Console.log(summaryReport(summary, result.seconds))
@@ -130,6 +142,17 @@ const finish = Effect.fn('finish')(function* (
         }),
     })
     yield* Console.log(`  Summary written to ${path}\n`)
+  }
+  if (Option.isSome(report.path)) {
+    const path = report.path.value
+    yield* writeReport(
+      path,
+      reportOf(
+        [{ run: result.info, seconds: result.seconds }],
+        report.full ? 'Full' : 'Summary',
+      ),
+    ).pipe(Effect.mapError(e => new CliExit({ code: 1, message: e.message })))
+    yield* Console.log(`  Report written to ${path}\n`)
   }
   if (result.info.status === 'crashed') {
     return yield* new CliExit({ code: 1, message: result.info.error ?? '' })
@@ -165,6 +188,13 @@ const run = Command.make(
       Flag.withDescription('Write a JSON summary to this file'),
       Flag.optional,
     ),
+    report: Flag.String('report').pipe(
+      Flag.withDescription(
+        'Write a shareable HTML report to this file: one file that opens in any browser, no server needed',
+      ),
+      Flag.optional,
+    ),
+    full: fullFlag,
     quiet: Flag.Boolean('quiet').pipe(
       Flag.withAlias('q'),
       Flag.withDescription('Only print the final summary'),
@@ -175,7 +205,14 @@ const run = Command.make(
     ...historyFlags,
   },
   Effect.fn('run')(function* (args) {
+    const report: ReportRequest = { path: args.report, full: args.full }
     const program = Effect.gen(function* () {
+      if (args.full && Option.isNone(args.report)) {
+        return yield* new CliExit({
+          code: 1,
+          message: '--full is for the HTML report. Add --report <file>.',
+        })
+      }
       const overrides = yield* parseOverrides(args)
       const baseUrl = yield* parseBaseUrl(args.baseUrl)
       const test = yield* loadTest(args.file, undefined, baseUrl)
@@ -225,11 +262,11 @@ const run = Command.make(
           handle === undefined
             ? Effect.void
             : Effect.flatMap(handle.snapshot, snapshot =>
-                Effect.ignore(finish(snapshot, args.json)),
+                Effect.ignore(finish(snapshot, args.json, report)),
               ),
         ),
       )
-      yield* finish(result, args.json)
+      yield* finish(result, args.json, report)
     }).pipe(
       Effect.provide(
         RunStore.forCli({ enabled: args.history, file: args.historyFile }),

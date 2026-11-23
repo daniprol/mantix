@@ -13,6 +13,8 @@ import { isPaused } from '../domain/steer.ts'
 import type { Message } from '../message.ts'
 import type { Model } from '../model.ts'
 import {
+  Mode,
+  href,
   newRunRouter,
   pickCompareRouter,
   runRouter,
@@ -65,14 +67,14 @@ const itemClass = (isCurrent: boolean) =>
 
 const item = (
   label: string,
-  href: string,
+  link: string,
   isCurrent: boolean,
   h: HtmlBuilder<Message>,
   extra: ReadonlyArray<Html> = [],
 ): Html =>
   h.a(
     [
-      h.Href(href),
+      h.Href(link),
       h.Class(itemClass(isCurrent)),
       ...(isCurrent ? [h.AriaCurrent('page')] : []),
     ],
@@ -144,10 +146,33 @@ const origin = (model: Model, h: HtmlBuilder<Message>): Html => {
   })
 }
 
-export const sidebarView = (model: Model, h: HtmlBuilder<Message>): Html => {
+/** The four sections. A report has none: it is about its own run. */
+const sectionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
+  if (model.mode._tag === 'Report') {
+    return h.empty
+  }
   const maybeLive = liveRun(model)
   const section = sectionOf(model, maybeLive)
-  return h.aside(
+  return h.nav(
+    [h.Class('flex flex-col gap-0.5 px-2 pt-4'), h.AriaLabel('Sections')],
+    [
+      item('New run', newRunRouter(), section === 'NewRun', h),
+      liveItem(model, maybeLive, section === 'Live', h),
+      item('Runs', runsRouter(), section === 'Runs', h),
+      item('Compare', pickCompareRouter(), section === 'Compare', h),
+    ],
+  )
+}
+
+/** The wordmark leads home: New run, or in a report its run. */
+const homeOf = (model: Model): string =>
+  Mode.match(model.mode, {
+    Dashboard: () => newRunRouter(),
+    Report: ({ runIds }) => href(model.mode, runRouter({ runId: runIds[0] })),
+  })
+
+export const sidebarView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.aside(
     [
       h.Class(
         'sticky top-0 flex h-screen w-[200px] shrink-0 flex-col border-r border-hairline bg-paper',
@@ -159,22 +184,14 @@ export const sidebarView = (model: Model, h: HtmlBuilder<Message>): Html => {
         [
           h.a(
             [
-              h.Href(newRunRouter()),
+              h.Href(homeOf(model)),
               h.Class('text-[16px] font-semibold tracking-[-0.02em] text-ink'),
             ],
             ['mantix'],
           ),
         ],
       ),
-      h.nav(
-        [h.Class('flex flex-col gap-0.5 px-2 pt-4'), h.AriaLabel('Sections')],
-        [
-          item('New run', newRunRouter(), section === 'NewRun', h),
-          liveItem(model, maybeLive, section === 'Live', h),
-          item('Runs', runsRouter(), section === 'Runs', h),
-          item('Compare', pickCompareRouter(), section === 'Compare', h),
-        ],
-      ),
+      sectionsView(model, h),
       h.div([h.Class('flex-1')]),
       h.div(
         [h.Class('flex flex-col gap-4 px-5 pb-5')],
@@ -182,4 +199,3 @@ export const sidebarView = (model: Model, h: HtmlBuilder<Message>): Html => {
       ),
     ],
   )
-}

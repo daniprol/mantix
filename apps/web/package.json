@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && vite build --mode report",
     "preview": "vite preview",
     "mock": "node mock/server.ts",
     "typecheck": "effect-tsgo tsc --noEmit -p . && effect-tsgo tsc --noEmit -p mock"
