@@ -5,6 +5,7 @@
 
 export type Palette = Readonly<{
   paper: string
+  wash: string
   ink: string
   ink2: string
   ink3: string
@@ -39,6 +40,7 @@ export const readPalette = (element: Element): Palette => {
   const { token, done } = resolver(element)
   const palette = {
     paper: token('--paper'),
+    wash: token('--wash'),
     ink: token('--ink'),
     ink2: token('--ink-2'),
     ink3: token('--ink-3'),

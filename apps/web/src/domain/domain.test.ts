@@ -9,6 +9,13 @@ import * as Format from './format.ts'
 import { applyOverrides, describePlan, plannedAt } from './plan.ts'
 import { Span, effectiveSpan, spanLabel, spanSeconds } from './span.ts'
 import { focusSeconds, p95Curve } from './stats.ts'
+import {
+  controlLabel,
+  isPaused,
+  plannedEnd,
+  stagedControl,
+  steerNow,
+} from './steer.ts'
 import * as Threshold from './threshold.ts'
 
 describe('format', () => {
@@ -154,5 +161,51 @@ describe('stats', () => {
     expect(curve).toHaveLength(2)
     expect(curve[0]).toBeCloseTo(40, -1)
     expect(curve[1]).toBeNull()
+  })
+})
+
+describe('steer', () => {
+  const plan = [
+    {
+      name: 'load',
+      startAfter: 0,
+      plan: {
+        model: 'rate' as const,
+        start: 10,
+        stages: [{ duration: 60, target: 10 }],
+      },
+    },
+  ]
+
+  test('the typed form becomes a control only when it makes sense', () => {
+    expect(
+      stagedControl({ _tag: 'Spike', factor: '2', duration: '1m' }),
+    ).toEqual(Option.some({ _tag: 'Spike', factor: 2, duration: 60 }))
+    expect(
+      stagedControl({ _tag: 'Spike', factor: '0', duration: '30' }),
+    ).toEqual(Option.none())
+    expect(stagedControl({ _tag: 'Rate', target: '40', over: '' })).toEqual(
+      Option.some({ _tag: 'Rate', target: 40 }),
+    )
+    expect(stagedControl({ _tag: 'Rate', target: '40', over: '10s' })).toEqual(
+      Option.some({ _tag: 'Rate', target: 40, over: 10 }),
+    )
+  })
+
+  test('a pause moves the end; "now" never falls before a control', () => {
+    const journal = [{ seq: 1, at: 20.4, control: { _tag: 'Pause' as const } }]
+    expect(isPaused(journal)).toBe(true)
+    expect(steerNow(20, journal)).toBe(21)
+    // Paused at 20.4: if it resumed at 30, the 60 s plan ends ~9.6 s later.
+    expect(plannedEnd(plan, journal, 30)).toBeCloseTo(69.6)
+    expect(plannedEnd(plan, [], 30)).toBe(60)
+  })
+
+  test('labels for the flags', () => {
+    expect(controlLabel({ _tag: 'Spike', factor: 2, duration: 30 }, true)).toBe(
+      '×2 30 s',
+    )
+    expect(controlLabel({ _tag: 'Rate', target: 400 }, true)).toBe('400/s')
+    expect(controlLabel({ _tag: 'Rate', target: 50 }, false)).toBe('50 VUs')
   })
 })

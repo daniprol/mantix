@@ -9,7 +9,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { UrlRequest } from 'foldkit/navigation'
 import { Url } from 'foldkit/url'
 
-import { RunInfo, Second, TestInfo } from '@mantix/api'
+import { JournalEntry, RunInfo, Second, TestInfo } from '@mantix/api'
 
 import { Theme } from './theme.ts'
 
@@ -39,6 +39,21 @@ export const Message = defineMessageUnion({
   SucceededStopRun: { run: RunInfo },
   FailedStopRun: { error: Schema.String },
   ClickedDismissError: {},
+
+  // Steering the live run: pause, add a spike, change the rate.
+  ClickedPause: {},
+  ClickedResume: {},
+  ClickedAddSpike: {},
+  ClickedChangeRate: {},
+  ClickedCancelChange: {},
+  UpdatedSpikeFactor: { value: Schema.String },
+  UpdatedSpikeDuration: { value: Schema.String },
+  UpdatedRateTarget: { value: Schema.String },
+  UpdatedRateOver: { value: Schema.String },
+  SubmittedChange: {},
+  SucceededSendControl: { runId: Schema.String, entry: JournalEntry },
+  FailedSendControl: { error: Schema.String },
+
   SelectedTheme: { theme: Theme },
   CompletedApplyTheme: {},
   UpdatedLoadInput: { value: Schema.String },

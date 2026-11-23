@@ -73,6 +73,21 @@ export const LoadForm = Schema.Struct({
 })
 export type LoadForm = typeof LoadForm.Type
 
+/**
+ * A change to the live run being typed, before Apply. The fields stay text,
+ * like the New run inputs, so a half-typed number is never lost; while they
+ * make sense, the change is drawn on the timeline (domain/steer.ts).
+ */
+export const SteerForm = defineTaggedUnion({
+  Closed: {},
+  Spike: { factor: Schema.String, duration: Schema.String },
+  Rate: { target: Schema.String, over: Schema.String },
+})
+export type SteerForm = typeof SteerForm.Type
+
+/** A control posted to the server and not answered yet. */
+const ControlRequest = Schema.Literals(['Idle', 'Sending'])
+
 /** The two runs chosen on the Compare page, before pressing Compare. */
 const ComparePick = Schema.Struct({
   maybeRunId: Schema.Option(Schema.String),
@@ -91,6 +106,8 @@ export const Model = Schema.Struct({
   launch: Launch,
   loadForm: LoadForm,
   comparePick: ComparePick,
+  steerForm: SteerForm,
+  controlRequest: ControlRequest,
   maybeActionError: Schema.Option(Schema.String),
   theme: Theme,
 })
@@ -111,6 +128,8 @@ export const initialModel = (
     maybeRunId: Option.none(),
     maybeBaselineId: Option.none(),
   },
+  steerForm: SteerForm.Closed(),
+  controlRequest: 'Idle',
   maybeActionError: Option.none(),
   theme,
 })

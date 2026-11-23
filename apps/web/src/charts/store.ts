@@ -9,7 +9,7 @@
  */
 import { Option, Schema } from 'effect'
 
-import { ScenarioInfo, Second } from '@mantix/api'
+import { Control, JournalEntry, ScenarioInfo, Second } from '@mantix/api'
 
 /** A latency threshold, drawn as a dashed line. */
 export const LatencyLimit = Schema.Struct({
@@ -35,6 +35,13 @@ export const TimelineInput = Schema.Struct({
   topTrack: TopTrack,
   /** The planned load, drawn dotted. Empty for an endpoint. */
   plan: Schema.Array(ScenarioInfo),
+  /**
+   * The run's live changes. The planned line follows the plan plus these
+   * (Steering.ts), and each change gets a small flag on the top track.
+   */
+  journal: Schema.Array(JournalEntry),
+  /** A change being typed, drawn ahead of the playhead in amber. */
+  maybeStaged: Schema.Option(Control),
   /** True for the open model (iterations/s), false for VUs. */
   isRate: Schema.Boolean,
   current: Schema.Array(Second),

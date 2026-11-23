@@ -9,7 +9,7 @@ import { Effect, Option, Schema } from 'effect'
 import { Command } from 'foldkit'
 import { load, pushUrl } from 'foldkit/navigation'
 
-import { RunOverrides } from '@mantix/api'
+import { Control, RunOverrides } from '@mantix/api'
 
 import { MantixClient, describeError } from './api.ts'
 import {
@@ -119,6 +119,31 @@ export const StopRun = Command.define('StopRun', {
     }).pipe(
       Effect.catch(error =>
         Effect.succeed(Message.FailedStopRun({ error: describeError(error) })),
+      ),
+      Effect.provide(MantixClient.layer),
+    ),
+})
+
+/**
+ * Steer a live run. The server answers with the new journal entry; the
+ * stream then sends the run with its whole journal to every open dashboard.
+ */
+export const SendControl = Command.define('SendControl', {
+  args: { runId: Schema.String, control: Control },
+  messages: [Message.SucceededSendControl, Message.FailedSendControl],
+  execute: ({ runId, control }) =>
+    Effect.gen(function* () {
+      const client = yield* MantixClient
+      const entry = yield* client.runs.control({
+        params: { id: runId },
+        payload: control,
+      })
+      return Message.SucceededSendControl({ runId, entry })
+    }).pipe(
+      Effect.catch(error =>
+        Effect.succeed(
+          Message.FailedSendControl({ error: describeError(error) }),
+        ),
       ),
       Effect.provide(MantixClient.layer),
     ),

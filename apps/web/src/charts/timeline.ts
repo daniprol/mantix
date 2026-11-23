@@ -71,6 +71,8 @@ const verticalLine = (u: uPlot, t: number, colour: string, width: number) => {
   ctx.save()
   ctx.strokeStyle = colour
   ctx.lineWidth = px(u, width)
+  // uPlot can leave a dotted series' dash set on the context.
+  ctx.setLineDash([])
   ctx.beginPath()
   ctx.moveTo(x, u.bbox.top)
   ctx.lineTo(x, u.bbox.top + u.bbox.height)
@@ -95,6 +97,50 @@ const drawRange = (u: uPlot, { series, palette }: Drawing) =>
     verticalLine(u, from, palette.accent, 1)
     verticalLine(u, to, palette.accent, 1)
   })
+
+/** Time spent paused: a wash on every track, since no load was sent. */
+const drawPauses = (u: uPlot, { series, palette }: Drawing) =>
+  series.pauses.forEach(({ from, to }) =>
+    fillColumns(u, from, Math.max(to, from + 0.5), palette.wash),
+  )
+
+/**
+ * Each live change (a spike, a new rate, a pause) as a hairline flag on the
+ * top track with its value beside it, so a steered run explains itself.
+ * The flags go under the load lines; the labels (drawMarks) over them.
+ */
+const drawMarkLines = (u: uPlot, { series, palette }: Drawing) =>
+  series.marks.forEach(({ t }) => verticalLine(u, t, palette.ink3, 1))
+
+/**
+ * The flags' labels. Changes made close together stack their labels in
+ * rows instead of writing over each other.
+ */
+const drawMarks = (u: uPlot, { series, palette }: Drawing) => {
+  const { ctx } = u
+  ctx.save()
+  ctx.font = `${px(u, 11)}px ${MONO}`
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  ctx.lineWidth = px(u, 4)
+  ctx.lineJoin = 'round'
+  // Where each row of labels is taken up to, in canvas pixels.
+  const rowEnds: Array<number> = []
+  series.marks.forEach(({ t, label }) => {
+    const x = xOf(u, t) + px(u, 5)
+    const width = ctx.measureText(label).width
+    const free = rowEnds.findIndex(end => x > end + px(u, 6))
+    const row = free === -1 ? rowEnds.length : free
+    rowEnds[row] = x + width
+    const y = u.bbox.top + px(u, 2 + row * 14)
+    // The same paper halo as the end labels, over the lines.
+    ctx.strokeStyle = palette.paper
+    ctx.strokeText(label, x, y)
+    ctx.fillStyle = palette.ink2
+    ctx.fillText(label, x, y)
+  })
+  ctx.restore()
+}
 
 const drawLiveEdge = (u: uPlot, { series, palette }: Drawing) =>
   Option.map(series.maybeLiveEdge, edge =>
@@ -469,6 +515,7 @@ const createCharts = (
     drag: { x: true, y: false, setScale: false },
   })
   const common = (u: uPlot) => [
+    drawPauses(u, current()),
     drawRange(u, current()),
     drawLagShading(u, current()),
   ]
@@ -505,13 +552,19 @@ const createCharts = (
         line(() => palette().ink2, 1.25, { dash: [2, 3], spanGaps: true }),
         line(() => palette().ink3, 1.25),
         line(() => palette().ink, 1.5),
+        // The change being typed: amber, like the playhead it starts from.
+        line(() => palette().accentInk, 1.25, { dash: [2, 3], spanGaps: true }),
       ],
-      hooks: hooks([
-        u => drawTopOverlays(u, current()),
-        u => drawTimes(u, current()),
-      ]),
+      hooks: {
+        ...hooks([
+          u => drawMarks(u, current()),
+          u => drawTopOverlays(u, current()),
+          u => drawTimes(u, current()),
+        ]),
+        drawAxes: [u => void common(u), u => drawMarkLines(u, current())],
+      },
     },
-    [[], [], [], []],
+    [[], [], [], [], []],
     hosts.top,
   )
 
@@ -636,6 +689,8 @@ const EMPTY_INPUT: TimelineInput = {
   duration: 60,
   topTrack: 'Load',
   plan: [],
+  journal: [],
+  maybeStaged: Option.none(),
   isRate: true,
   current: [],
   maybeBaseline: Option.none(),
@@ -696,6 +751,7 @@ const createTimeline = (
       series.planned,
       series.baselineLoad,
       series.load,
+      series.staged,
     ])
     charts.latency.setData([
       series.x,

@@ -11,6 +11,7 @@ import {
   FetchHistory,
   LoadRun,
   NavigateInternal,
+  SendControl,
   StartRun,
   StopRun,
   SyncTimeline,
@@ -132,6 +133,80 @@ describe('a live run', () => {
         const data = next.runs[runningRun.id]
         expect(data?._tag === 'Loaded' && data.run.status).toBe('finished')
       }),
+    )
+  })
+})
+
+describe('steering a live run', () => {
+  const live = modelWithRuns(AppRoute.Run({ runId: runningRun.id }), [
+    [runningRun, []],
+  ])
+  const journalOf = (next: typeof live) => {
+    const data = next.runs[runningRun.id]
+    return data?._tag === 'Loaded' ? data.run.journal : []
+  }
+
+  test('Pause sends the control; its entry joins the journal', () => {
+    const entry = { seq: 1, at: 0.4, control: { _tag: 'Pause' } } as const
+    story(
+      update,
+      given(live),
+      message(Message.ClickedPause()),
+      Command.expectExact(SendControl),
+      model(next => expect(next.controlRequest).toBe('Sending')),
+      Command.resolve(
+        SendControl,
+        Message.SucceededSendControl({ runId: runningRun.id, entry }),
+      ),
+      Command.resolve(SyncTimeline, Message.CompletedSyncTimeline()),
+      model(next => {
+        expect(next.controlRequest).toBe('Idle')
+        expect(journalOf(next)).toEqual([entry])
+      }),
+    )
+  })
+
+  test('a spike is staged on the timeline, then applied', () => {
+    story(
+      update,
+      given(live),
+      message(Message.ClickedAddSpike()),
+      // The staged spike is drawn ahead of the playhead.
+      Command.resolve(SyncTimeline, Message.CompletedSyncTimeline()),
+      message(Message.UpdatedSpikeFactor({ value: '3' })),
+      Command.resolve(SyncTimeline, Message.CompletedSyncTimeline()),
+      message(Message.SubmittedChange()),
+      Command.expectExact(SendControl),
+      Command.resolve(
+        SendControl,
+        Message.FailedSendControl({ error: 'Nothing is running.' }),
+      ),
+      // A refused change stays open so it can be fixed.
+      model(next => {
+        expect(next.steerForm).toEqual({
+          _tag: 'Spike',
+          factor: '3',
+          duration: '30',
+        })
+        expect(next.maybeActionError).toEqual(
+          Option.some('Nothing is running.'),
+        )
+      }),
+    )
+  })
+
+  test('a half-typed rate is not sent', () => {
+    story(
+      update,
+      given(live),
+      message(Message.ClickedChangeRate()),
+      Command.resolve(SyncTimeline, Message.CompletedSyncTimeline()),
+      // Nothing sensible to draw any more: the staged line goes away.
+      message(Message.UpdatedRateTarget({ value: 'fast' })),
+      Command.resolve(SyncTimeline, Message.CompletedSyncTimeline()),
+      message(Message.SubmittedChange()),
+      Command.expectNone(),
+      model(next => expect(next.controlRequest).toBe('Idle')),
     )
   })
 })
